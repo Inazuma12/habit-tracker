@@ -203,6 +203,14 @@ export default function HabitTrackerApp() {
       return;
     }
 
+    const date = getDayDate(currentMonth, day);
+    const state = habitData[key];
+    const isStartDay = date.getTime() === creationDate.getTime();
+
+    if(isStartDay) {
+      return;
+    }
+    
     const todayKey = getDateKey(selectedHabit.id, today);
 
     setHabitData((prev) => ({
