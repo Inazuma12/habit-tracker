@@ -483,6 +483,11 @@ export default function HabitTrackerApp() {
                 </div>
               )}
 
+              <HabitLifetimeStats
+                selectedHabit={selectedHabit}
+                habitData={habitData}
+              />
+
               <HabitProgressBar
                 selectedHabit={selectedHabit}
                 habitData={habitData}
@@ -501,11 +506,6 @@ export default function HabitTrackerApp() {
                   Log Relapse
                 </button>
               </div>
-
-              <HabitLifetimeStats
-                selectedHabit={selectedHabit}
-                habitData={habitData}
-              />
 
               <HabitCalendar
                 selectedHabit={selectedHabit}
