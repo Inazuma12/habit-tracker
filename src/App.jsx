@@ -601,14 +601,7 @@ function HabitProgressBar({ selectedHabit, habitData }) {
       </div>
 
       {countdownEnabled && (
-        <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl bg-[#232c52] border border-[#303b6e] px-4 py-3">
-          <div>
-            <div className="text-sm text-gray-300">Cycle countdown</div>
-            <div className="text-xs text-gray-400 mt-1">
-              Days:Hours:Minutes{countdownShowSeconds ? ":Seconds" : ""}
-            </div>
-          </div>
-
+        <div className="mt-4 flex items-center justify-center rounded-2xl bg-[#232c52] border border-[#303b6e] px-4 py-3">
           <div className="font-mono text-2xl font-bold text-[#9de2ba] tabular-nums">
             {countdown}
           </div>
