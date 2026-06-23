@@ -8,7 +8,10 @@ import {
   Plus,
   Settings,
   Flag,
+  Clock,
 } from "lucide-react";
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 function getDateKey(habitId, date) {
   return `${habitId}-${date.getFullYear()}-${String(
@@ -22,6 +25,26 @@ function getDayDate(monthDate, day) {
 
 function getDateOnly(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function formatCountdown(milliseconds, showSeconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts = [
+    String(days),
+    String(hours).padStart(2, "0"),
+    String(minutes).padStart(2, "0"),
+  ];
+
+  if (showSeconds) {
+    parts.push(String(seconds).padStart(2, "0"));
+  }
+
+  return parts.join(":");
 }
 
 export default function HabitTrackerApp() {
@@ -46,6 +69,8 @@ export default function HabitTrackerApp() {
         name: "No Relapse",
         createdAt: Date.now(),
         targetDays: 90,
+        countdownEnabled: false,
+        countdownShowSeconds: true,
       },
     ];
   });
@@ -87,6 +112,8 @@ export default function HabitTrackerApp() {
       name: trimmed,
       createdAt: Date.now(),
       targetDays: 90,
+      countdownEnabled: false,
+      countdownShowSeconds: true,
     };
 
     setHabits((prev) => [...prev, newHabit]);
@@ -188,6 +215,18 @@ export default function HabitTrackerApp() {
               targetDays: Math.max(1, Number(value) || 1),
             }
           : habit
+      )
+    );
+  }
+
+  function updateSelectedHabit(updates) {
+    if (!selectedHabit) {
+      return;
+    }
+
+    setHabits((prev) =>
+      prev.map((habit) =>
+        habit.id === selectedHabit.id ? { ...habit, ...updates } : habit
       )
     );
   }
@@ -343,6 +382,42 @@ export default function HabitTrackerApp() {
                     className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
                   />
 
+                  <div className="mt-5 space-y-3">
+                    <label className="flex items-center justify-between gap-4 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 cursor-pointer">
+                      <span className="flex items-center gap-3 font-medium">
+                        <Clock size={18} />
+                        Countdown
+                      </span>
+
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedHabit.countdownEnabled)}
+                        onChange={(e) =>
+                          updateSelectedHabit({
+                            countdownEnabled: e.target.checked,
+                          })
+                        }
+                        className="h-5 w-5 accent-[#5fa37c]"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between gap-4 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 cursor-pointer">
+                      <span className="font-medium">Show seconds</span>
+
+                      <input
+                        type="checkbox"
+                        checked={selectedHabit.countdownShowSeconds !== false}
+                        disabled={!selectedHabit.countdownEnabled}
+                        onChange={(e) =>
+                          updateSelectedHabit({
+                            countdownShowSeconds: e.target.checked,
+                          })
+                        }
+                        className="h-5 w-5 accent-[#5fa37c] disabled:opacity-40"
+                      />
+                    </label>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3 mt-6">
                     <button
                       onClick={exportData}
@@ -449,6 +524,9 @@ export default function HabitTrackerApp() {
 
 function HabitProgressBar({ selectedHabit, habitData }) {
   const targetDays = selectedHabit.targetDays || 90;
+  const countdownEnabled = Boolean(selectedHabit.countdownEnabled);
+  const countdownShowSeconds = selectedHabit.countdownShowSeconds !== false;
+  const [now, setNow] = useState(() => Date.now());
   const creationDate = getDateOnly(new Date(selectedHabit.createdAt));
 
   const firstCycleDate = new Date(creationDate);
@@ -458,7 +536,7 @@ function HabitProgressBar({ selectedHabit, habitData }) {
 
   const totalDaysSinceStart = Math.max(
     0,
-    Math.floor((today - firstCycleDate) / (1000 * 60 * 60 * 24))
+    Math.floor((today - firstCycleDate) / MS_PER_DAY)
   );
 
   const currentCycleIndex = Math.floor(
@@ -469,6 +547,22 @@ function HabitProgressBar({ selectedHabit, habitData }) {
   currentCycleStart.setDate(
     currentCycleStart.getDate() + currentCycleIndex * targetDays
   );
+
+  const currentCycleEnd = new Date(currentCycleStart);
+  currentCycleEnd.setDate(currentCycleEnd.getDate() + targetDays);
+
+  useEffect(() => {
+    if (!countdownEnabled) {
+      return undefined;
+    }
+
+    const interval = setInterval(
+      () => setNow(Date.now()),
+      countdownShowSeconds ? 1000 : 60000
+    );
+
+    return () => clearInterval(interval);
+  }, [countdownEnabled, countdownShowSeconds]);
 
   let successCount = 0;
 
@@ -485,6 +579,10 @@ function HabitProgressBar({ selectedHabit, habitData }) {
   }
 
   const progress = Math.min(100, (successCount / targetDays) * 100);
+  const countdown = formatCountdown(
+    currentCycleEnd.getTime() - now,
+    countdownShowSeconds
+  );
 
   return (
     <div className="bg-[#161d38] border border-[#303b6e] rounded-3xl p-5">
@@ -501,6 +599,21 @@ function HabitProgressBar({ selectedHabit, habitData }) {
           style={{ width: `${progress}%` }}
         />
       </div>
+
+      {countdownEnabled && (
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl bg-[#232c52] border border-[#303b6e] px-4 py-3">
+          <div>
+            <div className="text-sm text-gray-300">Cycle countdown</div>
+            <div className="text-xs text-gray-400 mt-1">
+              Days:Hours:Minutes{countdownShowSeconds ? ":Seconds" : ""}
+            </div>
+          </div>
+
+          <div className="font-mono text-2xl font-bold text-[#9de2ba] tabular-nums">
+            {countdown}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
