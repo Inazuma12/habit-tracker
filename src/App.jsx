@@ -52,7 +52,7 @@ export default function HabitTrackerApp() {
 
   const [selectedHabitId, setSelectedHabitId] = useState(() => {
     const saved = localStorage.getItem("selected-habit-id");
-    return saved ? JSON.parse(saved) : null;
+    return saved ? JSON.parse(saved) : habits[0]?.id || null;
   });
 
   const [habitData, setHabitData] = useState(() => {
@@ -62,12 +62,6 @@ export default function HabitTrackerApp() {
 
   const selectedHabit =
     habits.find((habit) => habit.id === selectedHabitId) || habits[0] || null;
-
-  useEffect(() => {
-    if (!selectedHabitId && habits.length > 0) {
-      setSelectedHabitId(habits[0].id);
-    }
-  }, [habits, selectedHabitId]);
 
   useEffect(() => {
     localStorage.setItem("habit-list", JSON.stringify(habits));
@@ -150,7 +144,7 @@ export default function HabitTrackerApp() {
     try {
       await navigator.clipboard.writeText(json);
       alert("Backup JSON copied to clipboard");
-    } catch (error) {
+    } catch {
       alert("Copy failed. You can manually select and copy the JSON text.");
     }
   }
@@ -173,7 +167,7 @@ export default function HabitTrackerApp() {
         setSelectedHabitId(parsed.selectedHabitId || null);
 
         setSettingsOpen(false);
-      } catch (error) {
+      } catch {
         alert("Invalid backup file");
       }
     };
@@ -203,15 +197,15 @@ export default function HabitTrackerApp() {
       return;
     }
 
-    const date = getDayDate(currentMonth, day);
-    const state = habitData[key];
-    const isStartDay = date.getTime() === creationDate.getTime();
+    const todayDate = getDateOnly(today);
+    const creationDate = getDateOnly(new Date(selectedHabit.createdAt));
+    const isStartDay = todayDate.getTime() === creationDate.getTime();
 
-    if(isStartDay) {
+    if (isStartDay) {
       return;
     }
     
-    const todayKey = getDateKey(selectedHabit.id, today);
+    const todayKey = getDateKey(selectedHabit.id, todayDate);
 
     setHabitData((prev) => ({
       ...prev,
@@ -533,7 +527,7 @@ function LastRelapseCounter({ selectedHabit, habitData }) {
     }
   });
 
-  let streakDays = 0;
+  let streakDays;
 
   if (lastRelapseDate) {
     // On ne compte que les journées complètement terminées après le relapse.
@@ -589,24 +583,39 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
   startDate.setDate(startDate.getDate() + 1);
 
   useEffect(() => {
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
+    const currentDay = getDateOnly(new Date());
+    const habitCreationDate = getDateOnly(new Date(selectedHabit.createdAt));
+    const firstTrackableDay = new Date(habitCreationDate);
+    firstTrackableDay.setDate(firstTrackableDay.getDate() + 1);
 
-    if (yesterday < startDate) {
+    const lastCompletedDay = new Date(currentDay);
+    lastCompletedDay.setDate(currentDay.getDate() - 1);
+
+    if (lastCompletedDay < firstTrackableDay) {
       return;
     }
 
-    const yesterdayKey = getDateKey(selectedHabit.id, yesterday);
-
     setHabitData((prev) => {
-      if (prev[yesterdayKey]) {
+      let hasChanges = false;
+      const updated = { ...prev };
+      const currentDate = new Date(firstTrackableDay);
+
+      while (currentDate <= lastCompletedDay) {
+        const key = getDateKey(selectedHabit.id, currentDate);
+
+        if (!updated[key]) {
+          updated[key] = "success";
+          hasChanges = true;
+        }
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      if (!hasChanges) {
         return prev;
       }
 
-      return {
-        ...prev,
-        [yesterdayKey]: "success",
-      };
+      return updated;
     });
   }, [selectedHabit.id, selectedHabit.createdAt, setHabitData]);
 
@@ -654,7 +663,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
     let fail = 0;
 
     for (let day = 1; day <= daysInMonth; day++) {
-      const key = getCalendarKey(day);
+      const key = getDateKey(selectedHabit.id, getDayDate(currentMonth, day));
       const state = habitData[key];
 
       if (state === "success") {
