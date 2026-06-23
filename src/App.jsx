@@ -502,15 +502,15 @@ export default function HabitTrackerApp() {
                 </button>
               </div>
 
+              <HabitLifetimeStats
+                selectedHabit={selectedHabit}
+                habitData={habitData}
+              />
+
               <HabitCalendar
                 selectedHabit={selectedHabit}
                 habitData={habitData}
                 setHabitData={setHabitData}
-              />
-
-              <HabitLifetimeStats
-                selectedHabit={selectedHabit}
-                habitData={habitData}
               />
             </>
           ) : (
