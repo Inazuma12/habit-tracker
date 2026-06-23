@@ -1061,7 +1061,7 @@ function HabitLifetimeStats({ selectedHabit, habitData }) {
   })();
 
   return (
-    <div className="bg-[#161d38] rounded-[32px] p-6 shadow-2xl border border-[#232c52] mt-6">
+    <div className="bg-[#161d38] rounded-[32px] p-6 shadow-2xl border border-[#232c52] mt-6 mb-6">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-2xl font-bold">Lifetime Stats</h2>
         <div className="text-sm text-gray-300">
