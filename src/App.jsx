@@ -683,10 +683,14 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
   const [currentMonth, setCurrentMonth] = useState(
     new Date(today.getFullYear(), today.getMonth(), 1)
   );
+  const [cycleHistoryOpen, setCycleHistoryOpen] = useState(false);
 
   const creationDate = getDateOnly(new Date(selectedHabit.createdAt));
   const startDate = new Date(creationDate);
   startDate.setDate(startDate.getDate() + 1);
+  const startDateTime = startDate.getTime();
+  const todayTime = today.getTime();
+  const targetDays = selectedHabit.targetDays || 90;
 
   useEffect(() => {
     const currentDay = getDateOnly(new Date());
@@ -787,6 +791,96 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
       total: success + fail,
     };
   }, [habitData, currentMonth, selectedHabit.id, daysInMonth]);
+
+  const totalStats = (() => {
+    let success = 0;
+    let fail = 0;
+
+    Object.entries(habitData).forEach(([key, state]) => {
+      if (!key.startsWith(`${selectedHabit.id}-`)) {
+        return;
+      }
+
+      const date = getDateOnly(new Date(key.replace(`${selectedHabit.id}-`, "")));
+
+      if (date.getTime() < startDateTime) {
+        return;
+      }
+
+      if (state === "success") {
+        success++;
+      }
+
+      if (state === "fail") {
+        fail++;
+      }
+    });
+
+    return {
+      success,
+      fail,
+      total: success + fail,
+    };
+  })();
+
+  const cycleHistory = (() => {
+    const totalDaysSinceStart = Math.max(
+      0,
+      Math.floor((todayTime - startDateTime) / MS_PER_DAY)
+    );
+    const currentCycleIndex = Math.floor(totalDaysSinceStart / targetDays);
+    const cycles = Array.from({ length: currentCycleIndex + 1 }, (_, index) => {
+      const cycleStart = new Date(startDateTime);
+      cycleStart.setDate(cycleStart.getDate() + index * targetDays);
+
+      const cycleEnd = new Date(cycleStart);
+      cycleEnd.setDate(cycleEnd.getDate() + targetDays - 1);
+
+      return {
+        id: index + 1,
+        start: cycleStart,
+        end: cycleEnd,
+        success: 0,
+        fail: 0,
+      };
+    });
+
+    Object.entries(habitData).forEach(([key, state]) => {
+      if (!key.startsWith(`${selectedHabit.id}-`)) {
+        return;
+      }
+
+      if (state !== "success" && state !== "fail") {
+        return;
+      }
+
+      const date = getDateOnly(new Date(key.replace(`${selectedHabit.id}-`, "")));
+
+      if (date.getTime() < startDateTime) {
+        return;
+      }
+
+      const cycleIndex = Math.floor(
+        Math.floor((date.getTime() - startDateTime) / MS_PER_DAY) / targetDays
+      );
+      const cycle = cycles[cycleIndex];
+
+      if (!cycle) {
+        return;
+      }
+
+      if (state === "success") {
+        cycle.success++;
+      } else {
+        cycle.fail++;
+      }
+    });
+
+    return cycles.map((cycle) => ({
+      ...cycle,
+      total: cycle.success + cycle.fail,
+    }));
+  })();
 
   function toggleDay(day) {
     const key = getCalendarKey(day);
@@ -933,6 +1027,89 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
           </div>
           <div className="text-sm text-gray-300 mt-1">Tracked</div>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <div className="text-sm uppercase tracking-wide text-gray-400 mb-3">
+          Total score
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-[#232c52] border border-[#303b6e] rounded-2xl p-4 text-center">
+            <div className="text-3xl font-bold text-[#9de2ba]">
+              {totalStats.success}
+            </div>
+            <div className="text-sm text-gray-300 mt-1">Wins</div>
+          </div>
+
+          <div className="bg-[#232c52] border border-[#303b6e] rounded-2xl p-4 text-center">
+            <div className="text-3xl font-bold text-[#ffb0be]">
+              {totalStats.fail}
+            </div>
+            <div className="text-sm text-gray-300 mt-1">Relapses</div>
+          </div>
+
+          <div className="bg-[#232c52] border border-[#303b6e] rounded-2xl p-4 text-center">
+            <div className="text-3xl font-bold text-white">
+              {totalStats.total}
+            </div>
+            <div className="text-sm text-gray-300 mt-1">Tracked</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 bg-[#101735] border border-[#303b6e] rounded-2xl overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setCycleHistoryOpen((open) => !open)}
+          className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-[#182047] transition"
+        >
+          <span className="font-semibold">Cycle history</span>
+          <ChevronRight
+            size={22}
+            className={`transition-transform ${
+              cycleHistoryOpen ? "rotate-90" : ""
+            }`}
+          />
+        </button>
+
+        {cycleHistoryOpen && (
+          <div className="border-t border-[#303b6e] divide-y divide-[#303b6e]">
+            {cycleHistory.map((cycle) => (
+              <div
+                key={cycle.id}
+                className="px-4 py-4 grid grid-cols-[1fr_auto] gap-4 items-center"
+              >
+                <div>
+                  <div className="font-semibold">Cycle {cycle.id}</div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    {cycle.start.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}{" "}
+                    -{" "}
+                    {cycle.end.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 text-sm">
+                  <span className="text-[#9de2ba] font-semibold">
+                    {cycle.success} W
+                  </span>
+                  <span className="text-[#ffb0be] font-semibold">
+                    {cycle.fail} R
+                  </span>
+                  <span className="text-gray-300 font-semibold">
+                    {cycle.total} T
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-auto flex justify-between pt-10">
