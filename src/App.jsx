@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import "./flowers/style.css";
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,9 +10,16 @@ import {
   Settings,
   Flag,
   Clock,
+  ArrowLeft,
+  Square,
+  SlidersHorizontal,
+  Shield,
+  Play,
+  Pause,
 } from "lucide-react";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const MAX_RENDERED_FLOWERS = 1000;
 
 function getDateKey(habitId, date) {
   return `${habitId}-${date.getFullYear()}-${String(
@@ -25,6 +33,12 @@ function getDayDate(monthDate, day) {
 
 function getDateOnly(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date, days) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
 }
 
 function formatCountdown(milliseconds, showSeconds) {
@@ -47,12 +61,156 @@ function formatCountdown(milliseconds, showSeconds) {
   return parts.join(":");
 }
 
+function getHabitStartDate(selectedHabit) {
+  const creationDate = getDateOnly(new Date(selectedHabit.createdAt));
+  const startDate = new Date(creationDate);
+  startDate.setDate(startDate.getDate() + 1);
+  return startDate;
+}
+
+function getCurrentCycleStats(selectedHabit, habitData) {
+  const targetDays = selectedHabit.targetDays || 90;
+  const firstCycleDate = getHabitStartDate(selectedHabit);
+  const today = getDateOnly(new Date());
+  const totalDaysSinceStart = Math.max(
+    0,
+    Math.floor((today - firstCycleDate) / MS_PER_DAY)
+  );
+  const currentCycleIndex = Math.floor(totalDaysSinceStart / targetDays);
+  const currentCycleStart = new Date(firstCycleDate);
+  currentCycleStart.setDate(
+    currentCycleStart.getDate() + currentCycleIndex * targetDays
+  );
+
+  let successCount = 0;
+  const currentDate = new Date(currentCycleStart);
+
+  while (currentDate <= today) {
+    const key = getDateKey(selectedHabit.id, currentDate);
+
+    if (habitData[key] === "success") {
+      successCount++;
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return {
+    successCount,
+    targetDays,
+    progress: Math.min(100, (successCount / targetDays) * 100),
+  };
+}
+
+function getLifetimeStats(selectedHabit, habitData) {
+  const startDateTime = getHabitStartDate(selectedHabit).getTime();
+  let success = 0;
+  let fail = 0;
+
+  Object.entries(habitData).forEach(([key, state]) => {
+    if (!key.startsWith(`${selectedHabit.id}-`)) {
+      return;
+    }
+
+    const date = getDateOnly(new Date(key.replace(`${selectedHabit.id}-`, "")));
+
+    if (date.getTime() < startDateTime) {
+      return;
+    }
+
+    if (state === "success") {
+      success++;
+    }
+
+    if (state === "fail") {
+      fail++;
+    }
+  });
+
+  return {
+    success,
+    fail,
+    total: success + fail,
+  };
+}
+
+function getSuccessMilestoneFlowers(selectedHabit, habitData, previewEndDate) {
+  const startDate = getHabitStartDate(selectedHabit);
+  const today = getDateOnly(new Date());
+  const endDate = previewEndDate
+    ? getDateOnly(previewEndDate)
+    : getDateOnly(new Date());
+  const todayKey = getDateKey(selectedHabit.id, endDate);
+
+  if (endDate.getTime() === today.getTime() && !habitData[todayKey]) {
+    endDate.setDate(endDate.getDate() - 1);
+  }
+
+  const flowers = [];
+  let consecutiveSuccessDays = 0;
+  const currentDate = new Date(startDate);
+
+  while (currentDate <= endDate) {
+    const key = getDateKey(selectedHabit.id, currentDate);
+    const state = habitData[key];
+
+    if (state === "success") {
+      consecutiveSuccessDays++;
+
+      if (consecutiveSuccessDays % 5 === 0) {
+        let variant = "gold";
+
+        if (consecutiveSuccessDays % 60 === 0) {
+          variant = "rose";
+        } else if (consecutiveSuccessDays % 30 === 0) {
+          variant = "purple";
+        } else if (consecutiveSuccessDays % 10 === 0) {
+          variant = "blue";
+        }
+
+        flowers.push(variant);
+      }
+    } else if (state === "fail") {
+      consecutiveSuccessDays = 0;
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return flowers;
+}
+
+function buildAdminFullSuccessScenario(baseHabit, daysPassed) {
+  const totalDays = Math.max(1, Number(daysPassed) || 1);
+  const today = getDateOnly(new Date());
+  const startDate = addDays(today, -(totalDays - 1));
+  const createdAt = addDays(startDate, -1).getTime();
+  const habit = {
+    ...baseHabit,
+    createdAt,
+  };
+  const data = {};
+  const currentDate = new Date(startDate);
+
+  while (currentDate <= today) {
+    data[getDateKey(habit.id, currentDate)] = "success";
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return {
+    habit,
+    habitData: data,
+    startDate,
+  };
+}
+
 export default function HabitTrackerApp() {
   const today = new Date();
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isAddingHabit, setIsAddingHabit] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [canvasMode, setCanvasMode] = useState(false);
   const [newHabitName, setNewHabitName] = useState("");
   const [exportJson, setExportJson] = useState("");
 
@@ -252,6 +410,16 @@ export default function HabitTrackerApp() {
     }));
   }
 
+  if (canvasMode && selectedHabit) {
+    return (
+      <HabitCanvas
+        selectedHabit={selectedHabit}
+        habitData={habitData}
+        onBack={() => setCanvasMode(false)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0b1020] text-white flex p-6 gap-6">
       <aside
@@ -271,7 +439,10 @@ export default function HabitTrackerApp() {
             return (
               <button
                 key={habit.id}
-                onClick={() => setSelectedHabitId(habit.id)}
+                onClick={() => {
+                  setSelectedHabitId(habit.id);
+                  setCanvasMode(false);
+                }}
                 className={`rounded-2xl px-4 py-4 text-left transition-all duration-200 border cursor-pointer hover:scale-[1.02] ${
                   selected
                     ? "bg-[#315843] border-[#5fa37c]"
@@ -333,10 +504,19 @@ export default function HabitTrackerApp() {
         <div className="w-full max-w-md">
           {selectedHabit ? (
             <>
-              <div className="mb-6 flex justify-end">
+              <div className="mb-6 flex justify-end gap-3">
+                <button
+                  onClick={() => setCanvasMode(true)}
+                  className="w-12 h-12 rounded-2xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+                  title="Canvas mode"
+                >
+                  <Square size={20} />
+                </button>
+
                 <button
                   onClick={() => setSettingsOpen(!settingsOpen)}
                   className="w-12 h-12 rounded-2xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+                  title="Settings"
                 >
                   <Settings size={20} />
                 </button>
@@ -528,33 +708,22 @@ export default function HabitTrackerApp() {
 }
 
 function HabitProgressBar({ selectedHabit, habitData }) {
-  const targetDays = selectedHabit.targetDays || 90;
   const countdownEnabled = Boolean(selectedHabit.countdownEnabled);
   const countdownShowSeconds = selectedHabit.countdownShowSeconds !== false;
   const [now, setNow] = useState(() => Date.now());
-  const creationDate = getDateOnly(new Date(selectedHabit.createdAt));
-
-  const firstCycleDate = new Date(creationDate);
-  firstCycleDate.setDate(firstCycleDate.getDate() + 1);
-
-  const today = getDateOnly(new Date());
-
+  const { successCount, targetDays, progress } = getCurrentCycleStats(
+    selectedHabit,
+    habitData
+  );
+  const currentCycleEnd = getHabitStartDate(selectedHabit);
   const totalDaysSinceStart = Math.max(
     0,
-    Math.floor((today - firstCycleDate) / MS_PER_DAY)
+    Math.floor((getDateOnly(new Date()) - currentCycleEnd) / MS_PER_DAY)
   );
-
-  const currentCycleIndex = Math.floor(
-    totalDaysSinceStart / targetDays
+  const currentCycleIndex = Math.floor(totalDaysSinceStart / targetDays);
+  currentCycleEnd.setDate(
+    currentCycleEnd.getDate() + (currentCycleIndex + 1) * targetDays
   );
-
-  const currentCycleStart = new Date(firstCycleDate);
-  currentCycleStart.setDate(
-    currentCycleStart.getDate() + currentCycleIndex * targetDays
-  );
-
-  const currentCycleEnd = new Date(currentCycleStart);
-  currentCycleEnd.setDate(currentCycleEnd.getDate() + targetDays);
 
   useEffect(() => {
     if (!countdownEnabled) {
@@ -569,21 +738,6 @@ function HabitProgressBar({ selectedHabit, habitData }) {
     return () => clearInterval(interval);
   }, [countdownEnabled, countdownShowSeconds]);
 
-  let successCount = 0;
-
-  const currentDate = new Date(currentCycleStart);
-
-  while (currentDate <= today) {
-    const key = getDateKey(selectedHabit.id, currentDate);
-
-    if (habitData[key] === "success") {
-      successCount++;
-    }
-
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  const progress = Math.min(100, (successCount / targetDays) * 100);
   const countdown = formatCountdown(
     currentCycleEnd.getTime() - now,
     countdownShowSeconds
@@ -613,6 +767,371 @@ function HabitProgressBar({ selectedHabit, habitData }) {
         </div>
       )}
     </div>
+  );
+}
+
+function HabitCanvas({ selectedHabit, habitData, onBack }) {
+  const [adminMode, setAdminMode] = useState(false);
+  const [adminDays, setAdminDays] = useState(100);
+  const adminScenario = buildAdminFullSuccessScenario(selectedHabit, adminDays);
+  const canvasHabit = adminMode ? adminScenario.habit : selectedHabit;
+  const canvasHabitData = adminMode ? adminScenario.habitData : habitData;
+  const lifetimeStats = getLifetimeStats(canvasHabit, canvasHabitData);
+  const cycleStats = getCurrentCycleStats(canvasHabit, canvasHabitData);
+  const timelineStartDate = getHabitStartDate(canvasHabit);
+  const timelineToday = getDateOnly(new Date());
+  const maxTimelineDay = Math.max(
+    0,
+    Math.floor((timelineToday - timelineStartDate) / MS_PER_DAY)
+  );
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [previewDay, setPreviewDay] = useState(maxTimelineDay);
+  const [timelinePlaying, setTimelinePlaying] = useState(false);
+  const [previewSpeed, setPreviewSpeed] = useState(1);
+  const activePreviewDay = Math.min(previewDay, maxTimelineDay);
+  const previewDate = addDays(timelineStartDate, activePreviewDay);
+  const flowers = getSuccessMilestoneFlowers(
+    canvasHabit,
+    canvasHabitData,
+    previewDate
+  );
+
+  useEffect(() => {
+    if (!timelinePlaying || activePreviewDay >= maxTimelineDay) {
+      return undefined;
+    }
+
+    const timeout = setTimeout(() => {
+      setPreviewDay((day) => {
+        const nextDay = Math.min(maxTimelineDay, day + previewSpeed);
+
+        if (nextDay >= maxTimelineDay) {
+          setTimelinePlaying(false);
+        }
+
+        return nextDay;
+      });
+    }, 320);
+
+    return () => clearTimeout(timeout);
+  }, [timelinePlaying, activePreviewDay, maxTimelineDay, previewSpeed]);
+
+  function startTimelinePlayback() {
+    if (activePreviewDay < maxTimelineDay) {
+      setTimelinePlaying(true);
+    }
+  }
+
+  return (
+    <div className="relative min-h-screen bg-black text-white">
+      <FlowerEnvironment flowers={flowers} />
+
+      <button
+        onClick={onBack}
+        className="absolute left-6 top-6 z-10 w-12 h-12 border border-[#303030] bg-[#080808] hover:bg-[#161616] transition flex items-center justify-center"
+        title="Back"
+      >
+        <ArrowLeft size={24} />
+      </button>
+
+      <div className="absolute right-6 top-6 z-10 max-w-[calc(100vw-120px)]">
+        <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 shadow-2xl backdrop-blur-md">
+          <div className="flex items-baseline gap-2 whitespace-nowrap">
+            <span className="text-[11px] uppercase tracking-wide text-white/45">
+              Wins
+            </span>
+            <span className="text-xl font-bold text-[#9de2ba]">
+              {lifetimeStats.success}
+            </span>
+          </div>
+
+          <div className="h-7 w-px bg-white/10" />
+
+          <div className="flex items-baseline gap-2 whitespace-nowrap">
+            <span className="text-[11px] uppercase tracking-wide text-white/45">
+              Relapses
+            </span>
+            <span className="text-xl font-bold text-[#ff9dac]">
+              {lifetimeStats.fail}
+            </span>
+          </div>
+
+          <div className="h-7 w-px bg-white/10" />
+
+          <div className="relative h-8 w-56 overflow-hidden rounded-full border border-white/10 bg-white/[0.08]">
+            <div
+              className="absolute inset-y-0 left-0 bg-[#5fa37c]"
+              style={{ width: `${cycleStats.progress}%` }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center px-3 text-sm font-semibold text-white drop-shadow">
+              {cycleStats.successCount} / {cycleStats.targetDays} days
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute left-6 top-24 z-10 w-64 rounded-2xl border border-white/10 bg-black/55 p-4 shadow-2xl backdrop-blur-md">
+        <label className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2 text-sm font-semibold text-white/85">
+            <Shield size={16} />
+            Admin mode
+          </span>
+          <input
+            type="checkbox"
+            checked={adminMode}
+            onChange={(event) => {
+              setAdminMode(event.target.checked);
+              setPreviewDay(
+                event.target.checked ? Math.max(0, adminDays - 1) : maxTimelineDay
+              );
+              setTimelinePlaying(false);
+            }}
+            className="h-5 w-5 accent-[#9de2ba]"
+          />
+        </label>
+
+        {adminMode && (
+          <div className="mt-4">
+            <label className="text-xs uppercase tracking-wide text-white/45">
+              Full success days
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={adminDays}
+              onChange={(event) => {
+                const nextAdminDays = Math.max(
+                  1,
+                  Number(event.target.value) || 1
+                );
+                setAdminDays(nextAdminDays);
+                setPreviewDay(Math.max(0, nextAdminDays - 1));
+                setTimelinePlaying(false);
+              }}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-white outline-none focus:border-[#9de2ba]"
+            />
+            <div className="mt-2 text-xs text-white/45">
+              {adminScenario.startDate.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}{" "}
+              to today
+            </div>
+          </div>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setTimelineOpen((open) => !open)}
+        className="absolute bottom-6 left-6 z-10 w-12 h-12 border border-white/10 bg-black/55 hover:bg-white/10 transition flex items-center justify-center backdrop-blur-md"
+        title="Timeline"
+      >
+        <SlidersHorizontal size={22} />
+      </button>
+
+      {timelineOpen && (
+        <div className="absolute bottom-6 left-24 right-6 z-10 rounded-2xl border border-white/10 bg-black/55 px-5 py-4 shadow-2xl backdrop-blur-md">
+          <div className="mb-3 flex items-center justify-between gap-4 text-sm">
+            <span className="font-semibold text-white/85">
+              {previewDate.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (activePreviewDay >= maxTimelineDay) {
+                  setPreviewDay(0);
+                  setTimelinePlaying(true);
+                  return;
+                }
+
+                setTimelinePlaying((playing) => !playing);
+              }}
+              className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/75 transition hover:bg-white/10"
+            >
+              {timelinePlaying ? <Pause size={14} /> : <Play size={14} />}
+              {timelinePlaying ? "Pause" : "Play"}
+            </button>
+          </div>
+
+          <div className="mb-3 flex items-center justify-end gap-2">
+            {[1, 5, 20, 100].map((speed) => (
+              <button
+                key={speed}
+                type="button"
+                onClick={() => setPreviewSpeed(speed)}
+                className={`rounded-lg border px-3 py-1 text-xs font-semibold transition ${
+                  previewSpeed === speed
+                    ? "border-[#9de2ba] bg-[#9de2ba] text-black"
+                    : "border-white/10 bg-white/[0.04] text-white/60 hover:bg-white/10"
+                }`}
+              >
+                {speed}x
+              </button>
+            ))}
+          </div>
+
+          <input
+            type="range"
+            min="0"
+            max={maxTimelineDay}
+            value={activePreviewDay}
+            onChange={(event) => {
+              setTimelinePlaying(false);
+              setPreviewDay(Number(event.target.value));
+            }}
+            onPointerUp={startTimelinePlayback}
+            onMouseUp={startTimelinePlayback}
+            onTouchEnd={startTimelinePlayback}
+            className="w-full accent-[#9de2ba]"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FlowerEnvironment({ flowers }) {
+  const visibleFlowers = getVisibleFlowers(flowers);
+  const denseScene = flowers.length > 30;
+  const heavyScene = flowers.length > 80;
+  const gardenScale = getGardenScale(flowers.length);
+  const layoutFlowerCount = Math.min(flowers.length, MAX_RENDERED_FLOWERS);
+
+  return (
+    <div
+      className={`flower-canvas absolute inset-0 ${
+        denseScene ? "flower-canvas-dense" : ""
+      } ${heavyScene ? "flower-canvas-heavy" : ""}`}
+    >
+      <div
+        className="ground"
+        style={{
+          transform: `scale(${gardenScale})`,
+        }}
+      >
+        {visibleFlowers.map((flower) => (
+          <div
+            key={flower.sourceIndex}
+            className={`flower-container flower-${flower.variant} animate`}
+            style={getFlowerLayoutStyle(
+              flower.sourceIndex,
+              layoutFlowerCount,
+              flower.variant
+            )}
+          >
+            <Flower />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function getVisibleFlowers(flowers) {
+  return flowers
+    .slice(0, MAX_RENDERED_FLOWERS)
+    .map((variant, sourceIndex) => ({
+      variant,
+      sourceIndex,
+    }));
+}
+
+function getGardenScale(flowerCount) {
+  if (flowerCount <= 48) {
+    return 1;
+  }
+
+  if (flowerCount <= 160) {
+    const pressure = (flowerCount - 48) / 112;
+    return 1 - pressure * 0.2;
+  }
+
+  if (flowerCount <= 520) {
+    const pressure = (flowerCount - 160) / 360;
+    return 0.8 - pressure * 0.18;
+  }
+
+  const pressure = Math.min(1, (flowerCount - 520) / 520);
+  return 0.62 - pressure * 0.1;
+}
+
+function getFlowerLayoutStyle(sourceIndex, totalFlowers, variant) {
+  const depthCount = 4;
+  const depth = sourceIndex % depthCount;
+  const layerIndex = Math.floor(sourceIndex / depthCount);
+  const seed = (sourceIndex * 9301 + 49297) % 233280;
+  const golden = 0.61803398875;
+  const xUnit = (layerIndex * golden + depth * 0.19) % 1;
+  const sideBias = layerIndex % 6 === 0 ? 0.04 : layerIndex % 6 === 3 ? -0.04 : 0;
+  const left = 3 + xUnit * 94 + sideBias * 100;
+  const stack = Math.floor(layerIndex / 18);
+  const depthBand = Math.floor(layerIndex / 6) % depthCount;
+  const jitterX = ((seed % 100) / 100 - 0.5) * 1.4;
+  const jitterY = (((seed * 17) % 100) / 100 - 0.5) * 2.4;
+  const topByDepth = [52, 82, 113, 146];
+  const widthByDepth = [4.8, 5.8, 6.8, 7.8];
+  const opacityByDepth = [0.56, 0.72, 0.88, 1];
+  const glowByDepth = [4, 6, 8, 10];
+  const top = topByDepth[(depth + depthBand) % depthCount] - stack * 9.5 + jitterY;
+  const width = widthByDepth[depth] * (0.88 + ((seed % 7) * 0.04));
+  const denseGlowScale = totalFlowers > 60 ? 0.18 : totalFlowers > 30 ? 0.45 : 1;
+  const glowColor = variant === "blue" ? "#66ccff88" : "#ffd85f88";
+
+  return {
+    left: `${Math.max(1, Math.min(99, left + jitterX))}%`,
+    top: `${top}%`,
+    width: `${width}%`,
+    zIndex: depth * 1000 + layerIndex,
+    opacity: opacityByDepth[depth],
+    filter: `drop-shadow(0 0 ${
+      glowByDepth[depth] * denseGlowScale
+    }cqi ${glowColor})`,
+  };
+}
+
+function Flower() {
+  return (
+    <>
+      <div className="flower-top">
+        <div className="flower-petal flower-petal__1" />
+        <div className="flower-petal flower-petal__2" />
+        <div className="flower-petal flower-petal__3" />
+        <div className="flower-petal flower-petal__4" />
+        <div className="flower-petal flower-petal__5" />
+        <div className="flower-petal flower-petal__6" />
+        <div className="flower-petal flower-petal__7" />
+        <div className="flower-petal flower-petal__8" />
+        <div className="flower-circle" />
+        <div className="flower-light flower-light__1" />
+        <div className="flower-light flower-light__2" />
+        <div className="flower-light flower-light__3" />
+        <div className="flower-light flower-light__4" />
+        <div className="flower-light flower-light__5" />
+        <div className="flower-light flower-light__6" />
+        <div className="flower-light flower-light__7" />
+        <div className="flower-light flower-light__8" />
+      </div>
+
+      <div className="flower-bottom">
+        <div className="flower-stem" />
+        <div className="flower-leaf flower-leaf__1" />
+        <div className="flower-leaf flower-leaf__2" />
+        <div className="flower-leaf flower-leaf__3" />
+        <div className="flower-leaf flower-leaf__4" />
+        <div className="flower-leaf flower-leaf__5" />
+        <div className="flower-leaf flower-leaf__6" />
+        <div className="flower-grass flower-grass__1" />
+        <div className="flower-grass flower-grass__2" />
+        <div className="flower-grass flower-grass__3" />
+        <div className="flower-grass flower-grass__4" />
+      </div>
+    </>
   );
 }
 
