@@ -7,6 +7,7 @@ import {
   Check,
   X,
   Dumbbell,
+  Edit3,
   PanelLeft,
   Plus,
   Settings,
@@ -14,12 +15,13 @@ import {
   Clock,
   LayoutDashboard,
   ListChecks,
+  Trash2,
   Trophy,
 } from "lucide-react";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
-const SPORT_SESSIONS = [
+const DEFAULT_SPORT_SESSIONS = [
   {
     id: "2026-07-02",
     date: "2026-07-02",
@@ -161,6 +163,11 @@ export default function HabitTrackerApp() {
     return saved ? JSON.parse(saved) : {};
   });
 
+  const [sportSessions, setSportSessions] = useState(() => {
+    const saved = localStorage.getItem("sport-sessions");
+    return saved ? JSON.parse(saved) : DEFAULT_SPORT_SESSIONS;
+  });
+
   const selectedHabit =
     habits.find((habit) => habit.id === selectedHabitId) || habits[0] || null;
 
@@ -175,6 +182,10 @@ export default function HabitTrackerApp() {
   useEffect(() => {
     localStorage.setItem("selected-habit-id", JSON.stringify(selectedHabitId));
   }, [selectedHabitId]);
+
+  useEffect(() => {
+    localStorage.setItem("sport-sessions", JSON.stringify(sportSessions));
+  }, [sportSessions]);
 
   useEffect(() => {
     localStorage.setItem("active-view", activeView);
@@ -221,6 +232,7 @@ export default function HabitTrackerApp() {
       habits,
       habitData,
       selectedHabitId,
+      sportSessions,
     };
 
     return JSON.stringify(data, null, 2);
@@ -272,6 +284,7 @@ export default function HabitTrackerApp() {
         setHabits(parsed.habits || []);
         setHabitData(parsed.habitData || {});
         setSelectedHabitId(parsed.selectedHabitId || null);
+        setSportSessions(parsed.sportSessions || DEFAULT_SPORT_SESSIONS);
 
         setSettingsOpen(false);
       } catch {
@@ -448,7 +461,7 @@ export default function HabitTrackerApp() {
           <DashboardView
             habits={habits}
             habitData={habitData}
-            sportSessions={SPORT_SESSIONS}
+            sportSessions={sportSessions}
             onOpenHabits={() => setActiveView("habits")}
             onOpenSport={() => setActiveView("sport")}
           />
@@ -476,7 +489,10 @@ export default function HabitTrackerApp() {
         )}
 
         {activeView === "sport" && (
-          <SportView sportSessions={SPORT_SESSIONS} />
+          <SportView
+            sportSessions={sportSessions}
+            setSportSessions={setSportSessions}
+          />
         )}
       </main>
     </div>
@@ -931,22 +947,315 @@ function HabitsView({
   );
 }
 
-function SportView({ sportSessions }) {
+function createEmptySportForm() {
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    title: "",
+    type: "Muscu",
+    exercises: [
+      {
+        id: Date.now(),
+        name: "",
+        detail: "",
+        value: "",
+      },
+    ],
+  };
+}
+
+function sessionToSportForm(session) {
+  return {
+    ...session,
+    exercises: session.exercises.map((exercise, index) => ({
+      id: `${session.id}-${index}`,
+      name: exercise.name,
+      detail: exercise.detail || "",
+      value: String(exercise.value).replace(".", ","),
+    })),
+  };
+}
+
+function getDefaultSportTitle(date) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+}
+
+function sortSportSessions(sessions) {
+  return [...sessions].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function SportView({ sportSessions, setSportSessions }) {
   const overview = getSportOverview(sportSessions);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [sportForm, setSportForm] = useState(() => createEmptySportForm());
+
+  function openCreateForm() {
+    setEditingSessionId(null);
+    setSportForm(createEmptySportForm());
+    setFormOpen(true);
+  }
+
+  function openEditForm(session) {
+    setEditingSessionId(session.id);
+    setSportForm(sessionToSportForm(session));
+    setFormOpen(true);
+  }
+
+  function closeSportForm() {
+    setEditingSessionId(null);
+    setSportForm(createEmptySportForm());
+    setFormOpen(false);
+  }
+
+  function updateSportFormField(field, value) {
+    setSportForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
+
+  function updateSportExercise(exerciseId, field, value) {
+    setSportForm((prev) => ({
+      ...prev,
+      exercises: prev.exercises.map((exercise) =>
+        exercise.id === exerciseId
+          ? {
+              ...exercise,
+              [field]: value,
+            }
+          : exercise
+      ),
+    }));
+  }
+
+  function addSportExercise() {
+    setSportForm((prev) => ({
+      ...prev,
+      exercises: [
+        ...prev.exercises,
+        {
+          id: Date.now(),
+          name: "",
+          detail: "",
+          value: "",
+        },
+      ],
+    }));
+  }
+
+  function removeSportExercise(exerciseId) {
+    setSportForm((prev) => ({
+      ...prev,
+      exercises:
+        prev.exercises.length === 1
+          ? prev.exercises
+          : prev.exercises.filter((exercise) => exercise.id !== exerciseId),
+    }));
+  }
+
+  function saveSportSession() {
+    const exercises = sportForm.exercises
+      .map((exercise) => {
+        const value = Number(String(exercise.value).replace(",", "."));
+
+        return {
+          name: exercise.name.trim(),
+          detail: exercise.detail.trim(),
+          value,
+        };
+      })
+      .filter((exercise) => exercise.name && Number.isFinite(exercise.value))
+      .map((exercise) => {
+        if (!exercise.detail) {
+          return {
+            name: exercise.name,
+            value: exercise.value,
+          };
+        }
+
+        return exercise;
+      });
+
+    if (!sportForm.date || exercises.length === 0) {
+      alert("Ajoute une date et au moins un exercice avec un score valide.");
+      return;
+    }
+
+    const savedSession = {
+      id: editingSessionId || `${sportForm.date}-${Date.now()}`,
+      date: sportForm.date,
+      title: sportForm.title.trim() || getDefaultSportTitle(sportForm.date),
+      type: "Muscu",
+      exercises,
+    };
+
+    setSportSessions((prev) => {
+      if (editingSessionId) {
+        return sortSportSessions(
+          prev.map((session) =>
+            session.id === editingSessionId ? savedSession : session
+          )
+        );
+      }
+
+      return sortSportSessions([...prev, savedSession]);
+    });
+
+    closeSportForm();
+  }
+
+  function deleteSportSession(sessionId) {
+    if (!confirm("Supprimer cette seance ?")) {
+      return;
+    }
+
+    setSportSessions((prev) =>
+      prev.filter((session) => session.id !== sessionId)
+    );
+
+    if (editingSessionId === sessionId) {
+      closeSportForm();
+    }
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto py-2">
-      <div className="mb-8 flex flex-col gap-2">
-        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#b7c7ff]">
-          Sport
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#b7c7ff]">
+            Sport
+          </div>
+          <h1 className="text-5xl font-bold tracking-tight">
+            Muscu
+          </h1>
+          <p className="text-gray-300 max-w-2xl">
+            Ajoute, modifie et consulte tes seances de muscu.
+          </p>
         </div>
-        <h1 className="text-5xl font-bold tracking-tight">
-          Muscu
-        </h1>
-        <p className="text-gray-300 max-w-2xl">
-          Lecture de tes premieres seances et de tes meilleurs scores par exercice.
-        </p>
+
+        <button
+          onClick={openCreateForm}
+          className="rounded-2xl px-5 py-4 bg-[#315843] hover:bg-[#3d6b51] transition font-semibold flex items-center gap-3"
+        >
+          <Plus size={20} />
+          Ajouter seance
+        </button>
       </div>
+
+      {formOpen && (
+        <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl mb-6">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold">
+                {editingSessionId ? "Modifier la seance" : "Ajouter une seance"}
+              </h2>
+              <p className="text-sm text-gray-300 mt-1">
+                Une ligne par exercice, avec ton score perso.
+              </p>
+            </div>
+
+            <button
+              onClick={closeSportForm}
+              className="w-11 h-11 rounded-2xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+              title="Fermer"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-4 mb-5">
+            <label className="block">
+              <span className="text-sm text-gray-300 block mb-2">Date</span>
+              <input
+                type="date"
+                value={sportForm.date}
+                onChange={(e) => updateSportFormField("date", e.target.value)}
+                className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm text-gray-300 block mb-2">Titre</span>
+              <input
+                type="text"
+                value={sportForm.title}
+                onChange={(e) => updateSportFormField("title", e.target.value)}
+                placeholder="Mardi 7 Juillet"
+                className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
+              />
+            </label>
+          </div>
+
+          <div className="space-y-3">
+            {sportForm.exercises.map((exercise) => (
+              <div
+                key={exercise.id}
+                className="grid grid-cols-1 md:grid-cols-[1fr_1fr_140px_44px] gap-3 bg-[#101735] border border-[#303b6e] rounded-2xl p-3"
+              >
+                <input
+                  type="text"
+                  value={exercise.name}
+                  onChange={(e) =>
+                    updateSportExercise(exercise.id, "name", e.target.value)
+                  }
+                  placeholder="Exercice"
+                  className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                />
+
+                <input
+                  type="text"
+                  value={exercise.detail}
+                  onChange={(e) =>
+                    updateSportExercise(exercise.id, "detail", e.target.value)
+                  }
+                  placeholder="Detail optionnel"
+                  className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                />
+
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={exercise.value}
+                  onChange={(e) =>
+                    updateSportExercise(exercise.id, "value", e.target.value)
+                  }
+                  placeholder="Score"
+                  className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                />
+
+                <button
+                  onClick={() => removeSportExercise(exercise.id)}
+                  className="h-12 rounded-xl bg-[#6a3140] hover:bg-[#7a394a] transition flex items-center justify-center"
+                  title="Supprimer exercice"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-3 mt-5">
+            <button
+              onClick={addSportExercise}
+              className="rounded-2xl px-4 py-3 bg-[#232c52] hover:bg-[#303b6e] transition font-medium flex items-center gap-2"
+            >
+              <Plus size={18} />
+              Ajouter exercice
+            </button>
+
+            <button
+              onClick={saveSportSession}
+              className="rounded-2xl px-5 py-3 bg-[#315843] hover:bg-[#3d6b51] transition font-semibold"
+            >
+              Enregistrer
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <DashboardStatCard
@@ -1044,8 +1353,26 @@ function SportView({ sportSessions }) {
                 </div>
                 <h2 className="text-3xl font-bold mt-1">{session.title}</h2>
               </div>
-              <div className="rounded-2xl bg-[#232c52] border border-[#303b6e] px-4 py-3 text-sm text-gray-300">
-                {session.exercises.length} exercices
+              <div className="flex gap-2">
+                <button
+                  onClick={() => openEditForm(session)}
+                  className="w-11 h-11 rounded-2xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+                  title="Modifier"
+                >
+                  <Edit3 size={18} />
+                </button>
+
+                <button
+                  onClick={() => deleteSportSession(session.id)}
+                  className="w-11 h-11 rounded-2xl bg-[#6a3140] hover:bg-[#7a394a] transition flex items-center justify-center"
+                  title="Supprimer"
+                >
+                  <Trash2 size={18} />
+                </button>
+
+                <div className="rounded-2xl bg-[#232c52] border border-[#303b6e] px-4 py-3 text-sm text-gray-300">
+                  {session.exercises.length} exercices
+                </div>
               </div>
             </div>
 
