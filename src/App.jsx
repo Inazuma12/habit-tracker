@@ -30,24 +30,29 @@ const DEFAULT_SPORT_SESSIONS = [
     exercises: [
       {
         name: "Traction",
+        series: 1,
         value: 32,
       },
       {
         name: "Tirage horizontale",
+        series: 1,
         value: 25,
       },
       {
         name: "Soulever de Terre",
         detail: "Bar 20",
+        series: 1,
         value: 12.5,
       },
       {
         name: "Bar Biceps",
+        series: 1,
         value: 10,
       },
       {
         name: "Marteaux",
         detail: "Serie de 12",
+        series: 1,
         value: 5,
       },
     ],
@@ -60,22 +65,27 @@ const DEFAULT_SPORT_SESSIONS = [
     exercises: [
       {
         name: "Alter Push",
+        series: 1,
         value: 14,
       },
       {
         name: "Bar Incline",
+        series: 1,
         value: 0,
       },
       {
         name: "Triceps Tirage Vertical",
+        series: 1,
         value: 6.8,
       },
       {
         name: "Polie Pec Tirage Haut",
+        series: 1,
         value: 4.5,
       },
       {
         name: "Epaule",
+        series: 1,
         value: 4,
       },
     ],
@@ -86,6 +96,19 @@ const MAIN_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "habits", label: "Habitudes", icon: ListChecks },
   { id: "sport", label: "Sport", icon: Dumbbell },
+];
+
+const DEFAULT_MUSCU_EXERCISES = [
+  "Traction",
+  "Tirage horizontale",
+  "Soulever de Terre",
+  "Bar Biceps",
+  "Marteaux",
+  "Alter Push",
+  "Bar Incline",
+  "Triceps Tirage Vertical",
+  "Polie Pec Tirage Haut",
+  "Epaule",
 ];
 
 function getDateKey(habitId, date) {
@@ -543,6 +566,7 @@ function getSportOverview(sportSessions) {
         bestByExercise[exercise.name] = {
           name: exercise.name,
           detail: exercise.detail,
+          series: exercise.series || 1,
           value: exercise.value,
           sessionTitle: session.title,
           date: session.date,
@@ -558,6 +582,20 @@ function getSportOverview(sportSessions) {
     bestScores: Object.values(bestByExercise),
     lastSession: sportSessions[sportSessions.length - 1],
   };
+}
+
+function getSportExerciseOptions(sportSessions) {
+  const names = new Set(DEFAULT_MUSCU_EXERCISES);
+
+  sportSessions.forEach((session) => {
+    session.exercises.forEach((exercise) => {
+      if (exercise.name) {
+        names.add(exercise.name);
+      }
+    });
+  });
+
+  return [...names].sort((a, b) => a.localeCompare(b));
 }
 
 function formatSportValue(value) {
@@ -957,6 +995,7 @@ function createEmptySportForm() {
         id: Date.now(),
         name: "",
         detail: "",
+        series: "1",
         value: "",
       },
     ],
@@ -970,6 +1009,7 @@ function sessionToSportForm(session) {
       id: `${session.id}-${index}`,
       name: exercise.name,
       detail: exercise.detail || "",
+      series: String(exercise.series || 1),
       value: String(exercise.value).replace(".", ","),
     })),
   };
@@ -989,6 +1029,7 @@ function sortSportSessions(sessions) {
 
 function SportView({ sportSessions, setSportSessions }) {
   const overview = getSportOverview(sportSessions);
+  const exerciseOptions = getSportExerciseOptions(sportSessions);
   const [formOpen, setFormOpen] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [sportForm, setSportForm] = useState(() => createEmptySportForm());
@@ -1041,6 +1082,7 @@ function SportView({ sportSessions, setSportSessions }) {
           id: Date.now(),
           name: "",
           detail: "",
+          series: "1",
           value: "",
         },
       ],
@@ -1061,10 +1103,12 @@ function SportView({ sportSessions, setSportSessions }) {
     const exercises = sportForm.exercises
       .map((exercise) => {
         const value = Number(String(exercise.value).replace(",", "."));
+        const series = Math.max(1, Number(exercise.series) || 1);
 
         return {
           name: exercise.name.trim(),
           detail: exercise.detail.trim(),
+          series,
           value,
         };
       })
@@ -1073,6 +1117,7 @@ function SportView({ sportSessions, setSportSessions }) {
         if (!exercise.detail) {
           return {
             name: exercise.name,
+            series: exercise.series,
             value: exercise.value,
           };
         }
@@ -1194,17 +1239,22 @@ function SportView({ sportSessions, setSportSessions }) {
             {sportForm.exercises.map((exercise) => (
               <div
                 key={exercise.id}
-                className="grid grid-cols-1 md:grid-cols-[1fr_1fr_140px_44px] gap-3 bg-[#101735] border border-[#303b6e] rounded-2xl p-3"
+                className="grid grid-cols-1 md:grid-cols-[1fr_1fr_110px_140px_44px] gap-3 bg-[#101735] border border-[#303b6e] rounded-2xl p-3"
               >
-                <input
-                  type="text"
+                <select
                   value={exercise.name}
                   onChange={(e) =>
                     updateSportExercise(exercise.id, "name", e.target.value)
                   }
-                  placeholder="Exercice"
                   className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
-                />
+                >
+                  <option value="">Exercice</option>
+                  {exerciseOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
 
                 <input
                   type="text"
@@ -1213,6 +1263,17 @@ function SportView({ sportSessions, setSportSessions }) {
                     updateSportExercise(exercise.id, "detail", e.target.value)
                   }
                   placeholder="Detail optionnel"
+                  className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                />
+
+                <input
+                  type="number"
+                  min="1"
+                  value={exercise.series}
+                  onChange={(e) =>
+                    updateSportExercise(exercise.id, "series", e.target.value)
+                  }
+                  placeholder="Series"
                   className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
                 />
 
@@ -1334,6 +1395,9 @@ function SportView({ sportSessions, setSportSessions }) {
                     {score.detail}
                   </div>
                 )}
+                <div className="text-xs text-gray-400 mt-1">
+                  {score.series || 1} serie{(score.series || 1) > 1 ? "s" : ""}
+                </div>
               </div>
             ))}
           </div>
@@ -1394,7 +1458,12 @@ function SportView({ sportSessions, setSportSessions }) {
                   </div>
 
                   <div className="flex items-center justify-between gap-3 rounded-xl bg-[#232c52] px-4 py-3">
-                    <span className="font-medium text-gray-300">Score</span>
+                    <div>
+                      <div className="font-medium text-gray-300">Score</div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {exercise.series || 1} serie{(exercise.series || 1) > 1 ? "s" : ""}
+                      </div>
+                    </div>
                     <span className="text-[#9de2ba] text-2xl font-bold">
                       {formatSportValue(exercise.value)}
                     </span>
