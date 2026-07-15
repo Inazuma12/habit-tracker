@@ -181,9 +181,25 @@ const DEFAULT_MUSCU_EXERCISES = [
   "Triceps corde",
   "Triceps dips banc",
   "Triceps extension nuque",
-  "Velo",
   "Wall Ball",
+  "Course a pied dehors",
+  "Course sur tapis",
+  "Marche inclinee tapis",
+  "Velo appartement",
+  "Velo elliptique",
+  "Rameur",
+  "Stairmaster",
 ];
+
+const CARDIO_EXERCISES = new Set([
+  "Course a pied dehors",
+  "Course sur tapis",
+  "Marche inclinee tapis",
+  "Velo appartement",
+  "Velo elliptique",
+  "Rameur",
+  "Stairmaster",
+]);
 
 function getDateKey(habitId, date) {
   return `${habitId}-${date.getFullYear()}-${String(
@@ -634,14 +650,18 @@ function getSportOverview(sportSessions) {
       uniqueExercises.add(exercise.name);
       totalEntries++;
 
+      const performanceValue =
+        exercise.type === "cardio"
+          ? exercise.distanceKm || exercise.durationMinutes || 0
+          : exercise.value || 0;
       const currentBest = bestByExercise[exercise.name];
 
-      if (!currentBest || exercise.value > currentBest.value) {
+      if (!currentBest || performanceValue > currentBest.performanceValue) {
         bestByExercise[exercise.name] = {
+          ...exercise,
           name: exercise.name,
           detail: exercise.detail,
-          series: exercise.series || 1,
-          value: exercise.value,
+          performanceValue,
           sessionTitle: session.title,
           date: session.date,
         };
@@ -672,8 +692,57 @@ function getSportExerciseOptions(sportSessions) {
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
+function isCardioExercise(exerciseName) {
+  return CARDIO_EXERCISES.has(exerciseName);
+}
+
 function formatSportValue(value) {
   return Number.isInteger(value) ? value : String(value).replace(".", ",");
+}
+
+function formatSportMetric(value, suffix) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  return `${formatSportValue(value)} ${suffix}`;
+}
+
+function parseSportNumber(value) {
+  const normalized = String(value).trim().replace(",", ".");
+
+  if (!normalized) {
+    return NaN;
+  }
+
+  return Number(normalized);
+}
+
+function getSportPerformanceLabel(exercise) {
+  if (exercise.type === "cardio") {
+    return (
+      formatSportMetric(exercise.distanceKm, "km") ||
+      formatSportMetric(exercise.durationMinutes, "min") ||
+      "-"
+    );
+  }
+
+  return formatSportValue(exercise.value);
+}
+
+function getSportMetricLabels(exercise) {
+  if (exercise.type === "cardio") {
+    return [
+      formatSportMetric(exercise.durationMinutes, "min"),
+      formatSportMetric(exercise.distanceKm, "km"),
+      formatSportMetric(exercise.speedKmh, "km/h"),
+      formatSportMetric(exercise.inclinePercent, "% pente"),
+    ].filter(Boolean);
+  }
+
+  return [
+    `${exercise.series || 1} serie${(exercise.series || 1) > 1 ? "s" : ""}`,
+  ];
 }
 
 function DashboardView({
@@ -1071,6 +1140,10 @@ function createEmptySportForm() {
         detail: "",
         series: "1",
         value: "",
+        durationMinutes: "",
+        distanceKm: "",
+        speedKmh: "",
+        inclinePercent: "",
       },
     ],
   };
@@ -1084,7 +1157,24 @@ function sessionToSportForm(session) {
       name: exercise.name,
       detail: exercise.detail || "",
       series: String(exercise.series || 1),
-      value: String(exercise.value).replace(".", ","),
+      value:
+        exercise.value === undefined ? "" : String(exercise.value).replace(".", ","),
+      durationMinutes:
+        exercise.durationMinutes === undefined
+          ? ""
+          : String(exercise.durationMinutes).replace(".", ","),
+      distanceKm:
+        exercise.distanceKm === undefined
+          ? ""
+          : String(exercise.distanceKm).replace(".", ","),
+      speedKmh:
+        exercise.speedKmh === undefined
+          ? ""
+          : String(exercise.speedKmh).replace(".", ","),
+      inclinePercent:
+        exercise.inclinePercent === undefined
+          ? ""
+          : String(exercise.inclinePercent).replace(".", ","),
     })),
   };
 }
@@ -1099,6 +1189,17 @@ function getDefaultSportTitle(date) {
 
 function sortSportSessions(sessions) {
   return [...sessions].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function getSessionSportType(exercises) {
+  const hasCardio = exercises.some((exercise) => exercise.type === "cardio");
+  const hasStrength = exercises.some((exercise) => exercise.type !== "cardio");
+
+  if (hasCardio && hasStrength) {
+    return "Sport";
+  }
+
+  return hasCardio ? "Cardio" : "Muscu";
 }
 
 function SportView({ sportSessions, setSportSessions }) {
@@ -1158,6 +1259,10 @@ function SportView({ sportSessions, setSportSessions }) {
           detail: "",
           series: "1",
           value: "",
+          durationMinutes: "",
+          distanceKm: "",
+          speedKmh: "",
+          inclinePercent: "",
         },
       ],
     }));
@@ -1176,31 +1281,66 @@ function SportView({ sportSessions, setSportSessions }) {
   function saveSportSession() {
     const exercises = sportForm.exercises
       .map((exercise) => {
-        const value = Number(String(exercise.value).replace(",", "."));
+        const value = parseSportNumber(exercise.value);
         const series = Math.max(1, Number(exercise.series) || 1);
+        const durationMinutes = parseSportNumber(exercise.durationMinutes);
+        const distanceKm = parseSportNumber(exercise.distanceKm);
+        const speedKmh = parseSportNumber(exercise.speedKmh);
+        const inclinePercent = parseSportNumber(exercise.inclinePercent);
+        const cardio = isCardioExercise(exercise.name);
 
-        return {
+        const savedExercise = {
           name: exercise.name.trim(),
           detail: exercise.detail.trim(),
-          series,
-          value,
+          type: cardio ? "cardio" : "strength",
         };
+
+        if (cardio) {
+          if (Number.isFinite(durationMinutes)) {
+            savedExercise.durationMinutes = durationMinutes;
+          }
+
+          if (Number.isFinite(distanceKm)) {
+            savedExercise.distanceKm = distanceKm;
+          }
+
+          if (Number.isFinite(speedKmh)) {
+            savedExercise.speedKmh = speedKmh;
+          }
+
+          if (Number.isFinite(inclinePercent)) {
+            savedExercise.inclinePercent = inclinePercent;
+          }
+        } else {
+          savedExercise.series = series;
+          savedExercise.value = value;
+        }
+
+        return savedExercise;
       })
-      .filter((exercise) => exercise.name && Number.isFinite(exercise.value))
+      .filter((exercise) => {
+        if (!exercise.name) {
+          return false;
+        }
+
+        if (exercise.type === "cardio") {
+          return Number.isFinite(exercise.durationMinutes);
+        }
+
+        return Number.isFinite(exercise.value);
+      })
       .map((exercise) => {
         if (!exercise.detail) {
-          return {
-            name: exercise.name,
-            series: exercise.series,
-            value: exercise.value,
-          };
+          const exerciseWithoutDetail = { ...exercise };
+          delete exerciseWithoutDetail.detail;
+          return exerciseWithoutDetail;
         }
 
         return exercise;
       });
 
     if (!sportForm.date || exercises.length === 0) {
-      alert("Ajoute une date et au moins un exercice avec un score valide.");
+      alert("Ajoute une date et au moins une ligne valide.");
       return;
     }
 
@@ -1208,7 +1348,7 @@ function SportView({ sportSessions, setSportSessions }) {
       id: editingSessionId || `${sportForm.date}-${Date.now()}`,
       date: sportForm.date,
       title: sportForm.title.trim() || getDefaultSportTitle(sportForm.date),
-      type: "Muscu",
+      type: getSessionSportType(exercises),
       exercises,
     };
 
@@ -1249,10 +1389,10 @@ function SportView({ sportSessions, setSportSessions }) {
             Sport
           </div>
           <h1 className="text-5xl font-bold tracking-tight">
-            Muscu
+            Sport
           </h1>
           <p className="text-gray-300 max-w-2xl">
-            Ajoute, modifie et consulte tes seances de muscu.
+            Ajoute, modifie et consulte tes seances de muscu et cardio.
           </p>
         </div>
 
@@ -1273,7 +1413,7 @@ function SportView({ sportSessions, setSportSessions }) {
                 {editingSessionId ? "Modifier la seance" : "Ajouter une seance"}
               </h2>
               <p className="text-sm text-gray-300 mt-1">
-                Une ligne par exercice, avec ton score perso.
+                Muscu: series et score. Cardio: temps, distance, vitesse et pente.
               </p>
             </div>
 
@@ -1310,67 +1450,151 @@ function SportView({ sportSessions, setSportSessions }) {
           </div>
 
           <div className="space-y-3">
-            {sportForm.exercises.map((exercise) => (
-              <div
-                key={exercise.id}
-                className="grid grid-cols-1 md:grid-cols-[1fr_1fr_110px_140px_44px] gap-3 bg-[#101735] border border-[#303b6e] rounded-2xl p-3"
-              >
-                <select
-                  value={exercise.name}
-                  onChange={(e) =>
-                    updateSportExercise(exercise.id, "name", e.target.value)
-                  }
-                  className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+            {sportForm.exercises.map((exercise) => {
+              const cardio = isCardioExercise(exercise.name);
+
+              return (
+                <div
+                  key={exercise.id}
+                  className="bg-[#101735] border border-[#303b6e] rounded-2xl p-3"
                 >
-                  <option value="">Exercice</option>
-                  {exerciseOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_44px] gap-3">
+                    <select
+                      value={exercise.name}
+                      onChange={(e) =>
+                        updateSportExercise(exercise.id, "name", e.target.value)
+                      }
+                      className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                    >
+                      <option value="">Exercice</option>
+                      {exerciseOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
 
-                <input
-                  type="text"
-                  value={exercise.detail}
-                  onChange={(e) =>
-                    updateSportExercise(exercise.id, "detail", e.target.value)
-                  }
-                  placeholder="Detail optionnel"
-                  className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
-                />
+                    <input
+                      type="text"
+                      value={exercise.detail}
+                      onChange={(e) =>
+                        updateSportExercise(
+                          exercise.id,
+                          "detail",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Detail optionnel"
+                      className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                    />
 
-                <input
-                  type="number"
-                  min="1"
-                  value={exercise.series}
-                  onChange={(e) =>
-                    updateSportExercise(exercise.id, "series", e.target.value)
-                  }
-                  placeholder="Series"
-                  className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
-                />
+                    <button
+                      onClick={() => removeSportExercise(exercise.id)}
+                      className="h-12 rounded-xl bg-[#6a3140] hover:bg-[#7a394a] transition flex items-center justify-center"
+                      title="Supprimer exercice"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
 
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={exercise.value}
-                  onChange={(e) =>
-                    updateSportExercise(exercise.id, "value", e.target.value)
-                  }
-                  placeholder="Score"
-                  className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
-                />
+                  {cardio ? (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={exercise.durationMinutes}
+                        onChange={(e) =>
+                          updateSportExercise(
+                            exercise.id,
+                            "durationMinutes",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Temps (min)"
+                        className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                      />
 
-                <button
-                  onClick={() => removeSportExercise(exercise.id)}
-                  className="h-12 rounded-xl bg-[#6a3140] hover:bg-[#7a394a] transition flex items-center justify-center"
-                  title="Supprimer exercice"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            ))}
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={exercise.distanceKm}
+                        onChange={(e) =>
+                          updateSportExercise(
+                            exercise.id,
+                            "distanceKm",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Distance (km)"
+                        className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                      />
+
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={exercise.speedKmh}
+                        onChange={(e) =>
+                          updateSportExercise(
+                            exercise.id,
+                            "speedKmh",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Vitesse (km/h)"
+                        className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                      />
+
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={exercise.inclinePercent}
+                        onChange={(e) =>
+                          updateSportExercise(
+                            exercise.id,
+                            "inclinePercent",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Pente (%)"
+                        className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-[110px_140px] gap-3 mt-3">
+                      <input
+                        type="number"
+                        min="1"
+                        value={exercise.series}
+                        onChange={(e) =>
+                          updateSportExercise(
+                            exercise.id,
+                            "series",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Series"
+                        className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                      />
+
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={exercise.value}
+                        onChange={(e) =>
+                          updateSportExercise(
+                            exercise.id,
+                            "value",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Score"
+                        className="bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 py-3 outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex flex-wrap gap-3 mt-5">
@@ -1461,7 +1685,7 @@ function SportView({ sportSessions, setSportSessions }) {
                     </div>
                   </div>
                   <div className="text-2xl font-bold text-[#9de2ba]">
-                    {formatSportValue(score.value)}
+                    {getSportPerformanceLabel(score)}
                   </div>
                 </div>
                 {score.detail && (
@@ -1470,7 +1694,7 @@ function SportView({ sportSessions, setSportSessions }) {
                   </div>
                 )}
                 <div className="text-xs text-gray-400 mt-1">
-                  {score.series || 1} serie{(score.series || 1) > 1 ? "s" : ""}
+                  {getSportMetricLabels(score).join(" / ")}
                 </div>
               </div>
             ))}
@@ -1533,13 +1757,15 @@ function SportView({ sportSessions, setSportSessions }) {
 
                   <div className="flex items-center justify-between gap-3 rounded-xl bg-[#232c52] px-4 py-3">
                     <div>
-                      <div className="font-medium text-gray-300">Score</div>
+                      <div className="font-medium text-gray-300">
+                        {exercise.type === "cardio" ? "Cardio" : "Score"}
+                      </div>
                       <div className="text-xs text-gray-400 mt-1">
-                        {exercise.series || 1} serie{(exercise.series || 1) > 1 ? "s" : ""}
+                        {getSportMetricLabels(exercise).join(" / ")}
                       </div>
                     </div>
                     <span className="text-[#9de2ba] text-2xl font-bold">
-                      {formatSportValue(exercise.value)}
+                      {getSportPerformanceLabel(exercise)}
                     </span>
                   </div>
                 </div>
