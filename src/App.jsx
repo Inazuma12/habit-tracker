@@ -1326,7 +1326,7 @@ function HabitsView({
             </div>
           )}
 
-          <div className="grid grid-cols-1 xl:grid-cols-[minmax(360px,0.85fr)_minmax(560px,1.15fr)] gap-6 items-start">
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(360px,0.9fr)_minmax(560px,1.1fr)] gap-8 items-start">
             <div className="min-w-0">
               <HabitLifetimeStats
                 selectedHabit={selectedHabit}
@@ -1353,7 +1353,7 @@ function HabitsView({
               </div>
             </div>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex justify-center">
               <HabitCalendar
                 selectedHabit={selectedHabit}
                 habitData={habitData}
@@ -2322,24 +2322,22 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
   }
 
   return (
-    <div className="bg-[#161d38] rounded-[32px] p-6 shadow-2xl border border-[#232c52] min-h-[720px] flex flex-col">
-      <div className="flex items-start justify-between mb-6">
+    <div className="w-full max-w-[620px] bg-[#161d38] rounded-[32px] p-6 shadow-2xl border border-[#232c52] min-h-[720px] flex flex-col">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-5xl font-bold tracking-tight">
-            {selectedHabit.name}
-          </h1>
+          <h2 className="text-2xl font-bold">Calendar</h2>
         </div>
 
-        <div className="text-lg text-gray-300 mt-3">{monthName}</div>
+        <div className="text-sm text-gray-300">{monthName}</div>
       </div>
 
-      <div className="grid grid-cols-7 gap-3 mb-3 text-gray-300 text-center text-lg">
+      <div className="grid grid-cols-[repeat(7,minmax(40px,68px))] justify-center gap-2 mb-3 text-gray-300 text-center text-sm">
         {weekDays.map((day) => (
           <div key={day}>{day}</div>
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-3">
+      <div className="grid grid-cols-[repeat(7,minmax(40px,68px))] justify-center gap-2">
         {calendarCells.map((day, index) => {
           if (!day) {
             return <div key={index} />;
@@ -2378,7 +2376,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
 
                 toggleDay(day);
               }}
-              className={`relative aspect-square rounded-2xl transition-all duration-200 flex items-center justify-center text-xl font-medium ${styles} ${
+              className={`relative aspect-square rounded-xl transition-all duration-200 flex items-center justify-center text-base font-medium ${styles} ${
                 isBeforeStart || isStartDay
                   ? "cursor-not-allowed"
                   : "hover:scale-105"
@@ -2387,15 +2385,15 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
               {!state && !isStartDay && <span>{day}</span>}
 
               {isStartDay && (
-                <Flag className="absolute w-6 h-6 text-[#ffd166]" />
+                <Flag className="absolute w-4 h-4 text-[#ffd166]" />
               )}
 
               {!isBeforeStart && state === "success" && (
-                <Check className="absolute w-7 h-7" strokeWidth={3} />
+                <Check className="absolute w-5 h-5" strokeWidth={3} />
               )}
 
               {!isBeforeStart && state === "fail" && (
-                <X className="absolute w-7 h-7" strokeWidth={3} />
+                <X className="absolute w-5 h-5" strokeWidth={3} />
               )}
             </button>
           );
