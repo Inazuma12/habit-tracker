@@ -15,6 +15,9 @@ import {
   Clock,
   LayoutDashboard,
   ListChecks,
+  Moon,
+  Palette,
+  Sun,
   Trash2,
   Trophy,
 } from "lucide-react";
@@ -96,6 +99,12 @@ const MAIN_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "habits", label: "Habitudes", icon: ListChecks },
   { id: "sport", label: "Sport", icon: Dumbbell },
+];
+
+const THEME_OPTIONS = [
+  { id: "default", label: "Default", icon: Palette },
+  { id: "light", label: "Light", icon: Sun },
+  { id: "dark", label: "Dark", icon: Moon },
 ];
 
 const DEFAULT_MUSCU_EXERCISES = [
@@ -244,8 +253,12 @@ export default function HabitTrackerApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isAddingHabit, setIsAddingHabit] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
   const [newHabitName, setNewHabitName] = useState("");
   const [exportJson, setExportJson] = useState("");
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem("app-theme") || "default";
+  });
 
   const [habits, setHabits] = useState(() => {
     const saved = localStorage.getItem("habit-list");
@@ -303,6 +316,10 @@ export default function HabitTrackerApp() {
   useEffect(() => {
     localStorage.setItem("active-view", activeView);
   }, [activeView]);
+
+  useEffect(() => {
+    localStorage.setItem("app-theme", theme);
+  }, [theme]);
 
   function addHabit() {
     const trimmed = newHabitName.trim();
@@ -459,9 +476,12 @@ export default function HabitTrackerApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b1020] text-white flex p-6 gap-6">
+    <div
+      data-theme={theme}
+      className="theme-root h-screen overflow-hidden bg-[#0b1020] text-white flex p-6 gap-6"
+    >
       <aside
-        className={`${sidebarOpen ? "w-72" : "w-20"} transition-all duration-300 bg-[#161d38] border border-[#232c52] rounded-[32px] p-4 flex flex-col shadow-2xl`}
+        className={`${sidebarOpen ? "w-72" : "w-20"} h-full min-h-0 shrink-0 transition-all duration-300 bg-[#161d38] border border-[#232c52] rounded-[32px] p-4 flex flex-col shadow-2xl overflow-hidden`}
       >
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -495,81 +515,66 @@ export default function HabitTrackerApp() {
         </nav>
 
         {activeView === "habits" && (
-          <div className="mt-8 flex flex-col gap-3 border-t border-[#303b6e] pt-5">
-            {sidebarOpen && (
-              <div className="px-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
-                Mes habitudes
-              </div>
-            )}
-
-            {habits.map((habit) => {
-              const selected = selectedHabit?.id === habit.id;
-
-              return (
-                <button
-                  key={habit.id}
-                  onClick={() => setSelectedHabitId(habit.id)}
-                  className={`rounded-2xl px-4 py-4 text-left transition-all duration-200 border cursor-pointer hover:scale-[1.02] ${
-                    selected
-                      ? "bg-[#294a3b] border-[#5fa37c]"
-                      : "bg-[#232c52] border-[#303b6e] hover:bg-[#2f3b70]"
-                  }`}
-                  title={habit.name}
-                >
-                  {sidebarOpen ? habit.name : habit.name.charAt(0)}
-                </button>
-              );
-            })}
-
-            {isAddingHabit ? (
-              <div className="bg-[#232c52] border border-[#4d5a8f] rounded-2xl p-3 flex flex-col gap-3">
-                <input
-                  value={newHabitName}
-                  onChange={(e) => setNewHabitName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      addHabit();
-                    }
-                  }}
-                  autoFocus
-                  placeholder="Habit name"
-                  className="bg-[#161d38] border border-[#4d5a8f] rounded-xl px-3 py-3 outline-none text-white"
-                />
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={addHabit}
-                    className="flex-1 bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl py-2"
-                  >
-                    Create
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setIsAddingHabit(false);
-                      setNewHabitName("");
-                    }}
-                    className="flex-1 bg-[#6a3140] hover:bg-[#7a394a] transition rounded-xl py-2"
-                  >
-                    Cancel
-                  </button>
+          <div className="group mt-8 min-h-0 flex flex-1 flex-col border-t border-[#303b6e] pt-5">
+            <div className="mb-3 flex items-center justify-between gap-3 pl-2 pr-3">
+              {sidebarOpen && (
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
+                  Mes habitudes
                 </div>
-              </div>
-            ) : (
+              )}
+
               <button
+                type="button"
                 onClick={() => setIsAddingHabit(true)}
-                className="rounded-2xl px-4 py-4 bg-[#242d56] border border-[#4d5a8f] hover:bg-[#2d3769] transition flex items-center justify-center gap-2"
+                disabled={isAddingHabit}
+                className={`ml-auto w-8 h-8 shrink-0 transition flex items-center justify-center text-gray-400 hover:text-white focus-visible:opacity-100 ${
+                  isAddingHabit
+                    ? "pointer-events-none opacity-0"
+                    : "opacity-0 group-hover:opacity-100"
+                }`}
                 title="Ajouter une habitude"
               >
-                <Plus />
-                {sidebarOpen && <span>Add Habit</span>}
+                <Plus size={18} />
               </button>
-            )}
+            </div>
+
+            <div className="sidebar-habits-scroll min-h-0 overflow-y-auto pr-4 flex flex-col gap-3">
+              {habits.map((habit) => {
+                const selected = selectedHabit?.id === habit.id;
+
+                return (
+                  <button
+                    key={habit.id}
+                    onClick={() => setSelectedHabitId(habit.id)}
+                    className={`mr-1 shrink-0 rounded-2xl px-4 py-4 text-left transition-all duration-200 border cursor-pointer origin-left hover:scale-[1.015] ${
+                      selected
+                        ? "bg-[#294a3b] border-[#5fa37c]"
+                        : "bg-[#232c52] border-[#303b6e] hover:bg-[#2f3b70]"
+                    }`}
+                    title={habit.name}
+                  >
+                    {sidebarOpen ? habit.name : habit.name.charAt(0)}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
+
+        <div className="mt-auto shrink-0 pt-4">
+          <button
+            type="button"
+            onClick={() => setGlobalSettingsOpen(true)}
+            className="w-full rounded-2xl px-4 py-4 bg-[#232c52] border border-[#303b6e] hover:bg-[#2f3b70] transition flex items-center justify-center gap-3"
+            title="Parametres"
+          >
+            <Settings size={22} />
+            {sidebarOpen && <span>Parametres</span>}
+          </button>
+        </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="min-h-0 flex-1 overflow-y-auto">
         {activeView === "dashboard" && (
           <DashboardView
             habits={habits}
@@ -614,6 +619,143 @@ export default function HabitTrackerApp() {
           />
         )}
       </main>
+
+      {globalSettingsOpen && (
+        <GlobalSettingsModal
+          theme={theme}
+          setTheme={setTheme}
+          onClose={() => setGlobalSettingsOpen(false)}
+        />
+      )}
+
+      {isAddingHabit && (
+        <AddHabitModal
+          newHabitName={newHabitName}
+          setNewHabitName={setNewHabitName}
+          addHabit={addHabit}
+          onClose={() => {
+            setIsAddingHabit(false);
+            setNewHabitName("");
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddHabitModal({ newHabitName, setNewHabitName, addHabit, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div className="w-full max-w-sm bg-[#161d38] border border-[#303b6e] rounded-3xl p-5 shadow-2xl">
+        <div className="flex items-center justify-between gap-4 mb-5">
+          <div>
+            <div className="text-lg font-semibold">Nouvelle habitude</div>
+            <div className="text-sm text-gray-300 mt-1">
+              Ajoute une habitude a suivre
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-10 h-10 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+            title="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <label className="text-sm text-gray-300 block mb-2">
+          Nom de l'habitude
+        </label>
+
+        <input
+          value={newHabitName}
+          onChange={(e) => setNewHabitName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              addHabit();
+            }
+
+            if (e.key === "Escape") {
+              onClose();
+            }
+          }}
+          autoFocus
+          placeholder="Habit name"
+          className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white"
+        />
+
+        <div className="grid grid-cols-2 gap-3 mt-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="bg-[#6a3140] hover:bg-[#7a394a] transition rounded-2xl py-3 font-medium"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={addHabit}
+            className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-2xl py-3 font-medium"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GlobalSettingsModal({ theme, setTheme, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div className="w-full max-w-md bg-[#161d38] border border-[#303b6e] rounded-3xl p-5 shadow-2xl">
+        <div className="flex items-center justify-between gap-4 mb-5">
+          <div>
+            <div className="text-lg font-semibold">Parametres</div>
+            <div className="text-sm text-gray-300 mt-1">
+              Preferences generales de l'application
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-10 h-10 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+            title="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <label className="text-sm text-gray-300 block mb-2">Theme</label>
+
+        <div className="grid grid-cols-3 gap-2">
+          {THEME_OPTIONS.map((option) => {
+            const Icon = option.icon;
+            const selected = theme === option.id;
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setTheme(option.id)}
+                className={`rounded-2xl border px-3 py-3 transition flex flex-col items-center gap-2 text-sm font-medium ${
+                  selected
+                    ? "bg-[#315843] border-[#5fa37c] text-white"
+                    : "bg-[#232c52] border-[#4d5a8f] hover:bg-[#303b6e] text-gray-300"
+                }`}
+                title={option.label}
+              >
+                <Icon size={18} />
+                <span>{option.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1026,8 +1168,19 @@ function HabitsView({
 
           {settingsOpen && (
             <div className="mb-6 bg-[#161d38] border border-[#303b6e] rounded-3xl p-5">
-              <div className="text-lg font-semibold mb-4">
-                Habit Settings
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div className="text-lg font-semibold">
+                  Habit Settings
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(false)}
+                  className="w-9 h-9 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+                  title="Close"
+                >
+                  <X size={18} />
+                </button>
               </div>
 
               <label className="text-sm text-gray-300 block mb-2">
