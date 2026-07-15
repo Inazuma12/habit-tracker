@@ -575,6 +575,12 @@ export default function HabitTrackerApp() {
             habits={habits}
             habitData={habitData}
             sportSessions={sportSessions}
+            exportData={exportData}
+            exportJson={exportJson}
+            setExportJson={setExportJson}
+            importData={importData}
+            copyExportData={copyExportData}
+            downloadExportData={downloadExportData}
             onOpenHabits={() => setActiveView("habits")}
             onOpenSport={() => setActiveView("sport")}
           />
@@ -749,6 +755,12 @@ function DashboardView({
   habits,
   habitData,
   sportSessions,
+  exportData,
+  exportJson,
+  setExportJson,
+  importData,
+  copyExportData,
+  downloadExportData,
   onOpenHabits,
   onOpenSport,
 }) {
@@ -795,6 +807,73 @@ function DashboardView({
           tone="blue"
         />
       </div>
+
+      <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+          <div>
+            <h2 className="text-2xl font-bold">Backup global</h2>
+            <p className="text-sm text-gray-300 mt-1">
+              Exporte et importe toutes tes donnees: habitudes, calendrier et sport.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={exportData}
+              className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-2xl px-5 py-3 font-medium"
+            >
+              Export
+            </button>
+
+            <label className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-2xl px-5 py-3 font-medium text-center cursor-pointer">
+              Import
+
+              <input
+                type="file"
+                accept="application/json"
+                className="hidden"
+                onChange={importData}
+              />
+            </label>
+          </div>
+        </div>
+
+        {exportJson && (
+          <div className="bg-[#0b1020] border border-[#303b6e] rounded-2xl p-4">
+            <div className="flex justify-between items-center mb-3">
+              <div className="font-medium">Export JSON global</div>
+              <button
+                onClick={() => setExportJson("")}
+                className="text-sm text-gray-300 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <textarea
+              readOnly
+              value={exportJson}
+              className="w-full h-40 bg-[#161d38] border border-[#303b6e] rounded-xl p-3 text-xs text-gray-200 outline-none resize-none"
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <button
+                onClick={copyExportData}
+                className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-xl py-2 font-medium"
+              >
+                Copy JSON
+              </button>
+
+              <button
+                onClick={downloadExportData}
+                className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl py-2 font-medium"
+              >
+                Download JSON
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-6">
         <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
