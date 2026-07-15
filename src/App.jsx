@@ -580,12 +580,6 @@ export default function HabitTrackerApp() {
             habits={habits}
             habitData={habitData}
             sportSessions={sportSessions}
-            exportData={exportData}
-            exportJson={exportJson}
-            setExportJson={setExportJson}
-            importData={importData}
-            copyExportData={copyExportData}
-            downloadExportData={downloadExportData}
             onOpenHabits={() => setActiveView("habits")}
             onOpenSport={() => setActiveView("sport")}
           />
@@ -624,6 +618,12 @@ export default function HabitTrackerApp() {
         <GlobalSettingsModal
           theme={theme}
           setTheme={setTheme}
+          exportData={exportData}
+          exportJson={exportJson}
+          setExportJson={setExportJson}
+          importData={importData}
+          copyExportData={copyExportData}
+          downloadExportData={downloadExportData}
           onClose={() => setGlobalSettingsOpen(false)}
         />
       )}
@@ -708,10 +708,20 @@ function AddHabitModal({ newHabitName, setNewHabitName, addHabit, onClose }) {
   );
 }
 
-function GlobalSettingsModal({ theme, setTheme, onClose }) {
+function GlobalSettingsModal({
+  theme,
+  setTheme,
+  exportData,
+  exportJson,
+  setExportJson,
+  importData,
+  copyExportData,
+  downloadExportData,
+  onClose,
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-      <div className="w-full max-w-md bg-[#161d38] border border-[#303b6e] rounded-3xl p-5 shadow-2xl">
+      <div className="w-full max-w-lg bg-[#161d38] border border-[#303b6e] rounded-3xl p-5 shadow-2xl">
         <div className="flex items-center justify-between gap-4 mb-5">
           <div>
             <div className="text-lg font-semibold">Parametres</div>
@@ -732,7 +742,7 @@ function GlobalSettingsModal({ theme, setTheme, onClose }) {
 
         <label className="text-sm text-gray-300 block mb-2">Theme</label>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 mb-6">
           {THEME_OPTIONS.map((option) => {
             const Icon = option.icon;
             const selected = theme === option.id;
@@ -754,6 +764,77 @@ function GlobalSettingsModal({ theme, setTheme, onClose }) {
               </button>
             );
           })}
+        </div>
+
+        <div className="border-t border-[#303b6e] pt-5">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+            <div>
+              <div className="font-semibold">Backup global</div>
+              <div className="text-sm text-gray-300 mt-1">
+                Exporte et importe toutes tes donnees.
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={exportData}
+                className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl px-4 py-2 font-medium"
+              >
+                Export
+              </button>
+
+              <label className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-xl px-4 py-2 font-medium text-center cursor-pointer">
+                Import
+
+                <input
+                  type="file"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={importData}
+                />
+              </label>
+            </div>
+          </div>
+
+          {exportJson && (
+            <div className="bg-[#0b1020] border border-[#303b6e] rounded-2xl p-4">
+              <div className="flex justify-between items-center mb-3">
+                <div className="font-medium">Export JSON global</div>
+                <button
+                  type="button"
+                  onClick={() => setExportJson("")}
+                  className="text-sm text-gray-300 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+
+              <textarea
+                readOnly
+                value={exportJson}
+                className="w-full h-36 bg-[#161d38] border border-[#303b6e] rounded-xl p-3 text-xs text-gray-200 outline-none resize-none"
+              />
+
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <button
+                  type="button"
+                  onClick={copyExportData}
+                  className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-xl py-2 font-medium"
+                >
+                  Copy JSON
+                </button>
+
+                <button
+                  type="button"
+                  onClick={downloadExportData}
+                  className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl py-2 font-medium"
+                >
+                  Download JSON
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -897,12 +978,6 @@ function DashboardView({
   habits,
   habitData,
   sportSessions,
-  exportData,
-  exportJson,
-  setExportJson,
-  importData,
-  copyExportData,
-  downloadExportData,
   onOpenHabits,
   onOpenSport,
 }) {
@@ -949,73 +1024,6 @@ function DashboardView({
           tone="blue"
         />
       </div>
-
-      <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl mb-6">
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
-          <div>
-            <h2 className="text-2xl font-bold">Backup global</h2>
-            <p className="text-sm text-gray-300 mt-1">
-              Exporte et importe toutes tes donnees: habitudes, calendrier et sport.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={exportData}
-              className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-2xl px-5 py-3 font-medium"
-            >
-              Export
-            </button>
-
-            <label className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-2xl px-5 py-3 font-medium text-center cursor-pointer">
-              Import
-
-              <input
-                type="file"
-                accept="application/json"
-                className="hidden"
-                onChange={importData}
-              />
-            </label>
-          </div>
-        </div>
-
-        {exportJson && (
-          <div className="bg-[#0b1020] border border-[#303b6e] rounded-2xl p-4">
-            <div className="flex justify-between items-center mb-3">
-              <div className="font-medium">Export JSON global</div>
-              <button
-                onClick={() => setExportJson("")}
-                className="text-sm text-gray-300 hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <textarea
-              readOnly
-              value={exportJson}
-              className="w-full h-40 bg-[#161d38] border border-[#303b6e] rounded-xl p-3 text-xs text-gray-200 outline-none resize-none"
-            />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-              <button
-                onClick={copyExportData}
-                className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-xl py-2 font-medium"
-              >
-                Copy JSON
-              </button>
-
-              <button
-                onClick={downloadExportData}
-                className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl py-2 font-medium"
-              >
-                Download JSON
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-6">
         <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
@@ -1146,7 +1154,7 @@ function HabitsView({
   logRelapse,
 }) {
   return (
-    <div className="w-full max-w-md mx-auto">
+    <div className="w-full max-w-7xl mx-auto py-2">
       {selectedHabit ? (
         <>
           <div className="mb-6 flex justify-between items-center">
@@ -1318,35 +1326,41 @@ function HabitsView({
             </div>
           )}
 
-          <HabitLifetimeStats
-            selectedHabit={selectedHabit}
-            habitData={habitData}
-          />
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(360px,0.85fr)_minmax(560px,1.15fr)] gap-6 items-start">
+            <div className="min-w-0">
+              <HabitLifetimeStats
+                selectedHabit={selectedHabit}
+                habitData={habitData}
+              />
 
-          <HabitProgressBar
-            selectedHabit={selectedHabit}
-            habitData={habitData}
-          />
+              <HabitProgressBar
+                selectedHabit={selectedHabit}
+                habitData={habitData}
+              />
 
-          <LastRelapseCounter
-            selectedHabit={selectedHabit}
-            habitData={habitData}
-          />
+              <LastRelapseCounter
+                selectedHabit={selectedHabit}
+                habitData={habitData}
+              />
 
-          <div className="mb-6 mt-6">
-            <button
-              onClick={logRelapse}
-              className="w-full bg-[#3d3131] hover:bg-[#4b3b3b] transition rounded-3xl py-5 text-lg font-medium shadow-lg border border-[#6e5858]"
-            >
-              Log Relapse
-            </button>
+              <div className="mb-6 mt-6">
+                <button
+                  onClick={logRelapse}
+                  className="w-full bg-[#3d3131] hover:bg-[#4b3b3b] transition rounded-3xl py-5 text-lg font-medium shadow-lg border border-[#6e5858]"
+                >
+                  Log Relapse
+                </button>
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <HabitCalendar
+                selectedHabit={selectedHabit}
+                habitData={habitData}
+                setHabitData={setHabitData}
+              />
+            </div>
           </div>
-
-          <HabitCalendar
-            selectedHabit={selectedHabit}
-            habitData={habitData}
-            setHabitData={setHabitData}
-          />
         </>
       ) : (
         <div className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-8 text-center shadow-2xl">
@@ -2544,7 +2558,7 @@ function HabitLifetimeStats({ selectedHabit, habitData }) {
   })();
 
   return (
-    <div className="bg-[#161d38] rounded-[32px] p-6 shadow-2xl border border-[#232c52] mt-6 mb-6">
+    <div className="bg-[#161d38] rounded-[32px] p-6 shadow-2xl border border-[#232c52] mb-6">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-2xl font-bold">Lifetime Stats</h2>
         <div className="text-sm text-gray-300">
