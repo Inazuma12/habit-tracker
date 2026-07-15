@@ -28,45 +28,25 @@ const SPORT_SESSIONS = [
     exercises: [
       {
         name: "Traction",
-        entries: [
-          { person: "Hicham", value: 32 },
-          { person: "Marwan", value: 27 },
-          { person: "Azzedine", value: 45 },
-        ],
+        value: 32,
       },
       {
         name: "Tirage horizontale",
-        entries: [
-          { person: "Hicham", value: 25 },
-          { person: "Marwan", value: 25 },
-          { person: "Azzedine", value: 39 },
-        ],
+        value: 25,
       },
       {
         name: "Soulever de Terre",
         detail: "Bar 20",
-        entries: [
-          { person: "Hicham", value: 12.5 },
-          { person: "Marwan", value: 12.5 },
-          { person: "Azzedine", value: 22.5 },
-        ],
+        value: 12.5,
       },
       {
         name: "Bar Biceps",
-        entries: [
-          { person: "Hicham", value: 10 },
-          { person: "Marwan", value: 10 },
-          { person: "Azzedine", value: 15 },
-        ],
+        value: 10,
       },
       {
         name: "Marteaux",
         detail: "Serie de 12",
-        entries: [
-          { person: "Hicham", value: 5 },
-          { person: "Marwan", value: 5 },
-          { person: "Azzedine", value: 12 },
-        ],
+        value: 5,
       },
     ],
   },
@@ -78,35 +58,23 @@ const SPORT_SESSIONS = [
     exercises: [
       {
         name: "Alter Push",
-        entries: [
-          { person: "Hicham", value: 14 },
-          { person: "Marwan", value: 14 },
-        ],
+        value: 14,
       },
       {
         name: "Bar Incline",
-        entries: [
-          { person: "Hicham", value: 0 },
-          { person: "Marwan", value: 0 },
-        ],
+        value: 0,
       },
       {
         name: "Triceps Tirage Vertical",
-        entries: [
-          { person: "Hicham", value: 6.8 },
-          { person: "Marwan", value: 6.8 },
-        ],
+        value: 6.8,
       },
       {
         name: "Polie Pec Tirage Haut",
-        entries: [
-          { person: "Hicham", value: 4.5 },
-          { person: "Marwan", value: 4.5 },
-        ],
+        value: 4.5,
       },
       {
         name: "Epaule",
-        entries: [{ person: "Hicham", value: 4 }],
+        value: 4,
       },
     ],
   },
@@ -545,25 +513,33 @@ function getHabitOverview(habits, habitData) {
 
 function getSportOverview(sportSessions) {
   const uniqueExercises = new Set();
-  const uniquePeople = new Set();
   let totalEntries = 0;
+  const bestByExercise = {};
 
   sportSessions.forEach((session) => {
     session.exercises.forEach((exercise) => {
       uniqueExercises.add(exercise.name);
-      totalEntries += exercise.entries.length;
+      totalEntries++;
 
-      exercise.entries.forEach((entry) => {
-        uniquePeople.add(entry.person);
-      });
+      const currentBest = bestByExercise[exercise.name];
+
+      if (!currentBest || exercise.value > currentBest.value) {
+        bestByExercise[exercise.name] = {
+          name: exercise.name,
+          detail: exercise.detail,
+          value: exercise.value,
+          sessionTitle: session.title,
+          date: session.date,
+        };
+      }
     });
   });
 
   return {
     sessionsCount: sportSessions.length,
     exerciseCount: uniqueExercises.size,
-    peopleCount: uniquePeople.size,
     totalEntries,
+    bestScores: Object.values(bestByExercise),
     lastSession: sportSessions[sportSessions.length - 1],
   };
 }
@@ -617,7 +593,7 @@ function DashboardView({
         />
         <DashboardStatCard
           icon={Dumbbell}
-          label="Seances sport"
+          label="Seances muscu"
           value={sportOverview.sessionsCount}
           tone="blue"
         />
@@ -663,7 +639,7 @@ function DashboardView({
             <div>
               <h2 className="text-2xl font-bold">Sport</h2>
               <p className="text-sm text-gray-300 mt-1">
-                {sportOverview.exerciseCount} exercices, {sportOverview.peopleCount} personnes
+                Muscu suivie pour ton profil
               </p>
             </div>
 
@@ -965,10 +941,10 @@ function SportView({ sportSessions }) {
           Sport
         </div>
         <h1 className="text-5xl font-bold tracking-tight">
-          Suivi sport
+          Muscu
         </h1>
         <p className="text-gray-300 max-w-2xl">
-          Base ouverte pour suivre muscu, course, randonnee ou autre activite.
+          Lecture de tes premieres seances et de tes meilleurs scores par exercice.
         </p>
       </div>
 
@@ -991,6 +967,68 @@ function SportView({ sportSessions }) {
           value={overview.totalEntries}
           tone="green"
         />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[0.8fr_1.2fr] gap-6 mb-6">
+        <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+          <div className="flex items-center gap-3 text-[#9de2ba] font-semibold mb-3">
+            <CalendarDays size={18} />
+            Derniere seance
+          </div>
+
+          {overview.lastSession ? (
+            <>
+              <h2 className="text-3xl font-bold">
+                {overview.lastSession.title}
+              </h2>
+              <div className="text-gray-300 mt-2">
+                {overview.lastSession.exercises.length} exercices notes
+              </div>
+            </>
+          ) : (
+            <div className="text-gray-300">Aucune seance pour le moment.</div>
+          )}
+        </section>
+
+        <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+          <div className="flex items-center justify-between gap-4 mb-5">
+            <div>
+              <h2 className="text-2xl font-bold">
+                Meilleur score par exercice
+              </h2>
+              <p className="text-sm text-gray-300 mt-1">
+                Base perso, sans comparaison entre profils.
+              </p>
+            </div>
+            <Trophy className="text-[#9de2ba]" size={24} />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {overview.bestScores.map((score) => (
+              <div
+                key={score.name}
+                className="bg-[#101735] border border-[#303b6e] rounded-2xl p-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-semibold">{score.name}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {score.sessionTitle}
+                    </div>
+                  </div>
+                  <div className="text-2xl font-bold text-[#9de2ba]">
+                    {formatSportValue(score.value)}
+                  </div>
+                </div>
+                {score.detail && (
+                  <div className="text-xs text-gray-400 mt-3">
+                    {score.detail}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
 
       <div className="space-y-6">
@@ -1028,18 +1066,11 @@ function SportView({ sportSessions }) {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    {exercise.entries.map((entry) => (
-                      <div
-                        key={`${entry.person}-${entry.value}`}
-                        className="flex items-center justify-between gap-3 rounded-xl bg-[#232c52] px-4 py-3"
-                      >
-                        <span className="font-medium">{entry.person}</span>
-                        <span className="text-[#9de2ba] font-bold">
-                          {formatSportValue(entry.value)}
-                        </span>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-[#232c52] px-4 py-3">
+                    <span className="font-medium text-gray-300">Score</span>
+                    <span className="text-[#9de2ba] text-2xl font-bold">
+                      {formatSportValue(exercise.value)}
+                    </span>
                   </div>
                 </div>
               ))}
