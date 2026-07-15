@@ -1,17 +1,122 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Activity,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Check,
   X,
+  Dumbbell,
   PanelLeft,
   Plus,
   Settings,
   Flag,
   Clock,
+  LayoutDashboard,
+  ListChecks,
+  Trophy,
 } from "lucide-react";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+const SPORT_SESSIONS = [
+  {
+    id: "2026-07-02",
+    date: "2026-07-02",
+    title: "Jeudi 2 Juillet",
+    type: "Muscu",
+    exercises: [
+      {
+        name: "Traction",
+        entries: [
+          { person: "Hicham", value: 32 },
+          { person: "Marwan", value: 27 },
+          { person: "Azzedine", value: 45 },
+        ],
+      },
+      {
+        name: "Tirage horizontale",
+        entries: [
+          { person: "Hicham", value: 25 },
+          { person: "Marwan", value: 25 },
+          { person: "Azzedine", value: 39 },
+        ],
+      },
+      {
+        name: "Soulever de Terre",
+        detail: "Bar 20",
+        entries: [
+          { person: "Hicham", value: 12.5 },
+          { person: "Marwan", value: 12.5 },
+          { person: "Azzedine", value: 22.5 },
+        ],
+      },
+      {
+        name: "Bar Biceps",
+        entries: [
+          { person: "Hicham", value: 10 },
+          { person: "Marwan", value: 10 },
+          { person: "Azzedine", value: 15 },
+        ],
+      },
+      {
+        name: "Marteaux",
+        detail: "Serie de 12",
+        entries: [
+          { person: "Hicham", value: 5 },
+          { person: "Marwan", value: 5 },
+          { person: "Azzedine", value: 12 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "2026-07-07",
+    date: "2026-07-07",
+    title: "Mardi 7 Juillet",
+    type: "Muscu",
+    exercises: [
+      {
+        name: "Alter Push",
+        entries: [
+          { person: "Hicham", value: 14 },
+          { person: "Marwan", value: 14 },
+        ],
+      },
+      {
+        name: "Bar Incline",
+        entries: [
+          { person: "Hicham", value: 0 },
+          { person: "Marwan", value: 0 },
+        ],
+      },
+      {
+        name: "Triceps Tirage Vertical",
+        entries: [
+          { person: "Hicham", value: 6.8 },
+          { person: "Marwan", value: 6.8 },
+        ],
+      },
+      {
+        name: "Polie Pec Tirage Haut",
+        entries: [
+          { person: "Hicham", value: 4.5 },
+          { person: "Marwan", value: 4.5 },
+        ],
+      },
+      {
+        name: "Epaule",
+        entries: [{ person: "Hicham", value: 4 }],
+      },
+    ],
+  },
+];
+
+const MAIN_NAV_ITEMS = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "habits", label: "Habitudes", icon: ListChecks },
+  { id: "sport", label: "Sport", icon: Dumbbell },
+];
 
 function getDateKey(habitId, date) {
   return `${habitId}-${date.getFullYear()}-${String(
@@ -50,6 +155,9 @@ function formatCountdown(milliseconds, showSeconds) {
 export default function HabitTrackerApp() {
   const today = new Date();
 
+  const [activeView, setActiveView] = useState(() => {
+    return localStorage.getItem("active-view") || "dashboard";
+  });
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isAddingHabit, setIsAddingHabit] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -99,6 +207,10 @@ export default function HabitTrackerApp() {
   useEffect(() => {
     localStorage.setItem("selected-habit-id", JSON.stringify(selectedHabitId));
   }, [selectedHabitId]);
+
+  useEffect(() => {
+    localStorage.setItem("active-view", activeView);
+  }, [activeView]);
 
   function addHabit() {
     const trimmed = newHabitName.trim();
@@ -260,269 +372,681 @@ export default function HabitTrackerApp() {
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="mb-6 w-12 h-12 rounded-2xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+          title="Menu"
         >
           <PanelLeft />
         </button>
 
-        <div className="flex flex-col gap-3">
-          {habits.map((habit) => {
-            const selected = selectedHabit?.id === habit.id;
+        <nav className="flex flex-col gap-3">
+          {MAIN_NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const selected = activeView === item.id;
 
             return (
               <button
-                key={habit.id}
-                onClick={() => setSelectedHabitId(habit.id)}
-                className={`rounded-2xl px-4 py-4 text-left transition-all duration-200 border cursor-pointer hover:scale-[1.02] ${
+                key={item.id}
+                onClick={() => setActiveView(item.id)}
+                className={`rounded-2xl px-4 py-4 text-left transition-all duration-200 border cursor-pointer flex items-center gap-3 ${
                   selected
                     ? "bg-[#315843] border-[#5fa37c]"
                     : "bg-[#232c52] border-[#303b6e] hover:bg-[#2f3b70]"
                 }`}
+                title={item.label}
               >
-                {sidebarOpen ? habit.name : habit.name.charAt(0)}
+                <Icon size={22} />
+                {sidebarOpen && <span>{item.label}</span>}
               </button>
             );
           })}
+        </nav>
 
-          {isAddingHabit ? (
-            <div className="bg-[#232c52] border border-[#4d5a8f] rounded-2xl p-3 flex flex-col gap-3">
-              <input
-                value={newHabitName}
-                onChange={(e) => setNewHabitName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    addHabit();
-                  }
-                }}
-                autoFocus
-                placeholder="Habit name"
-                className="bg-[#161d38] border border-[#4d5a8f] rounded-xl px-3 py-3 outline-none text-white"
-              />
+        {activeView === "habits" && (
+          <div className="mt-8 flex flex-col gap-3 border-t border-[#303b6e] pt-5">
+            {sidebarOpen && (
+              <div className="px-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
+                Mes habitudes
+              </div>
+            )}
 
-              <div className="flex gap-2">
+            {habits.map((habit) => {
+              const selected = selectedHabit?.id === habit.id;
+
+              return (
                 <button
-                  onClick={addHabit}
-                  className="flex-1 bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl py-2"
+                  key={habit.id}
+                  onClick={() => setSelectedHabitId(habit.id)}
+                  className={`rounded-2xl px-4 py-4 text-left transition-all duration-200 border cursor-pointer hover:scale-[1.02] ${
+                    selected
+                      ? "bg-[#294a3b] border-[#5fa37c]"
+                      : "bg-[#232c52] border-[#303b6e] hover:bg-[#2f3b70]"
+                  }`}
+                  title={habit.name}
                 >
-                  Create
+                  {sidebarOpen ? habit.name : habit.name.charAt(0)}
                 </button>
+              );
+            })}
 
-                <button
-                  onClick={() => {
-                    setIsAddingHabit(false);
-                    setNewHabitName("");
+            {isAddingHabit ? (
+              <div className="bg-[#232c52] border border-[#4d5a8f] rounded-2xl p-3 flex flex-col gap-3">
+                <input
+                  value={newHabitName}
+                  onChange={(e) => setNewHabitName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      addHabit();
+                    }
                   }}
-                  className="flex-1 bg-[#6a3140] hover:bg-[#7a394a] transition rounded-xl py-2"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsAddingHabit(true)}
-              className="rounded-2xl px-4 py-4 bg-[#242d56] border border-[#4d5a8f] hover:bg-[#2d3769] transition flex items-center justify-center gap-2"
-            >
-              <Plus />
-              {sidebarOpen && <span>Add Habit</span>}
-            </button>
-          )}
-        </div>
-      </aside>
+                  autoFocus
+                  placeholder="Habit name"
+                  className="bg-[#161d38] border border-[#4d5a8f] rounded-xl px-3 py-3 outline-none text-white"
+                />
 
-      <main className="flex-1 flex items-center justify-center">
-        <div className="w-full max-w-md">
-          {selectedHabit ? (
-            <>
-              <div className="mb-6 flex justify-end">
-                <button
-                  onClick={() => setSettingsOpen(!settingsOpen)}
-                  className="w-12 h-12 rounded-2xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
-                >
-                  <Settings size={20} />
-                </button>
-              </div>
-
-              {settingsOpen && (
-                <div className="mb-6 bg-[#161d38] border border-[#303b6e] rounded-3xl p-5">
-                  <div className="text-lg font-semibold mb-4">
-                    Habit Settings
-                  </div>
-
-                  <label className="text-sm text-gray-300 block mb-2">
-                    Habit Name
-                  </label>
-
-                  <input
-                    type="text"
-                    value={selectedHabit.name}
-                    onChange={(e) => {
-                      setHabits((prev) =>
-                        prev.map((habit) =>
-                          habit.id === selectedHabit.id
-                            ? {
-                                ...habit,
-                                name: e.target.value,
-                              }
-                            : habit
-                        )
-                      );
-                    }}
-                    className="w-full mb-5 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
-                  />
-
-                  <label className="text-sm text-gray-300 block mb-2">
-                    Goal Duration (days)
-                  </label>
-
-                  <input
-                    type="number"
-                    min="1"
-                    value={selectedHabit.targetDays || 90}
-                    onChange={(e) => updateTargetDays(e.target.value)}
-                    className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
-                  />
-
-                  <div className="mt-5 space-y-3">
-                    <label className="flex items-center justify-between gap-4 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 cursor-pointer">
-                      <span className="flex items-center gap-3 font-medium">
-                        <Clock size={18} />
-                        Countdown
-                      </span>
-
-                      <input
-                        type="checkbox"
-                        checked={Boolean(selectedHabit.countdownEnabled)}
-                        onChange={(e) =>
-                          updateSelectedHabit({
-                            countdownEnabled: e.target.checked,
-                          })
-                        }
-                        className="h-5 w-5 accent-[#5fa37c]"
-                      />
-                    </label>
-
-                    <label className="flex items-center justify-between gap-4 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 cursor-pointer">
-                      <span className="font-medium">Show seconds</span>
-
-                      <input
-                        type="checkbox"
-                        checked={selectedHabit.countdownShowSeconds !== false}
-                        disabled={!selectedHabit.countdownEnabled}
-                        onChange={(e) =>
-                          updateSelectedHabit({
-                            countdownShowSeconds: e.target.checked,
-                          })
-                        }
-                        className="h-5 w-5 accent-[#5fa37c] disabled:opacity-40"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 mt-6">
-                    <button
-                      onClick={exportData}
-                      className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-2xl py-3 font-medium"
-                    >
-                      Export
-                    </button>
-
-                    <label className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-2xl py-3 font-medium text-center cursor-pointer">
-                      Import
-
-                      <input
-                        type="file"
-                        accept="application/json"
-                        className="hidden"
-                        onChange={importData}
-                      />
-                    </label>
-                  </div>
-
-                  {exportJson && (
-                    <div className="mt-5 bg-[#0b1020] border border-[#303b6e] rounded-2xl p-4">
-                      <div className="flex justify-between items-center mb-3">
-                        <div className="font-medium">Export JSON</div>
-                        <button
-                          onClick={() => setExportJson("")}
-                          className="text-sm text-gray-300 hover:text-white"
-                        >
-                          Close
-                        </button>
-                      </div>
-
-                      <textarea
-                        readOnly
-                        value={exportJson}
-                        className="w-full h-40 bg-[#161d38] border border-[#303b6e] rounded-xl p-3 text-xs text-gray-200 outline-none resize-none"
-                      />
-
-                      <div className="grid grid-cols-2 gap-3 mt-3">
-                        <button
-                          onClick={copyExportData}
-                          className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-xl py-2 font-medium"
-                        >
-                          Copy JSON
-                        </button>
-
-                        <button
-                          onClick={downloadExportData}
-                          className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl py-2 font-medium"
-                        >
-                          Download JSON
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={addHabit}
+                    className="flex-1 bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl py-2"
+                  >
+                    Create
+                  </button>
 
                   <button
-                    onClick={deleteHabit}
-                    className="w-full mt-4 bg-[#6a3140] hover:bg-[#7a394a] transition rounded-2xl py-3 font-medium"
+                    onClick={() => {
+                      setIsAddingHabit(false);
+                      setNewHabitName("");
+                    }}
+                    className="flex-1 bg-[#6a3140] hover:bg-[#7a394a] transition rounded-xl py-2"
                   >
-                    Delete Habit
+                    Cancel
                   </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsAddingHabit(true)}
+                className="rounded-2xl px-4 py-4 bg-[#242d56] border border-[#4d5a8f] hover:bg-[#2d3769] transition flex items-center justify-center gap-2"
+                title="Ajouter une habitude"
+              >
+                <Plus />
+                {sidebarOpen && <span>Add Habit</span>}
+              </button>
+            )}
+          </div>
+        )}
+      </aside>
+
+      <main className="flex-1 overflow-y-auto">
+        {activeView === "dashboard" && (
+          <DashboardView
+            habits={habits}
+            habitData={habitData}
+            sportSessions={SPORT_SESSIONS}
+            onOpenHabits={() => setActiveView("habits")}
+            onOpenSport={() => setActiveView("sport")}
+          />
+        )}
+
+        {activeView === "habits" && (
+          <HabitsView
+            selectedHabit={selectedHabit}
+            habitData={habitData}
+            setHabitData={setHabitData}
+            settingsOpen={settingsOpen}
+            setSettingsOpen={setSettingsOpen}
+            setHabits={setHabits}
+            updateTargetDays={updateTargetDays}
+            updateSelectedHabit={updateSelectedHabit}
+            exportData={exportData}
+            exportJson={exportJson}
+            setExportJson={setExportJson}
+            importData={importData}
+            copyExportData={copyExportData}
+            downloadExportData={downloadExportData}
+            deleteHabit={deleteHabit}
+            logRelapse={logRelapse}
+          />
+        )}
+
+        {activeView === "sport" && (
+          <SportView sportSessions={SPORT_SESSIONS} />
+        )}
+      </main>
+    </div>
+  );
+}
+
+function getHabitOverview(habits, habitData) {
+  let wins = 0;
+  let relapses = 0;
+
+  habits.forEach((habit) => {
+    Object.entries(habitData).forEach(([key, state]) => {
+      if (!key.startsWith(`${habit.id}-`)) {
+        return;
+      }
+
+      if (state === "success") {
+        wins++;
+      }
+
+      if (state === "fail") {
+        relapses++;
+      }
+    });
+  });
+
+  return {
+    habitsCount: habits.length,
+    wins,
+    relapses,
+    trackedDays: wins + relapses,
+  };
+}
+
+function getSportOverview(sportSessions) {
+  const uniqueExercises = new Set();
+  const uniquePeople = new Set();
+  let totalEntries = 0;
+
+  sportSessions.forEach((session) => {
+    session.exercises.forEach((exercise) => {
+      uniqueExercises.add(exercise.name);
+      totalEntries += exercise.entries.length;
+
+      exercise.entries.forEach((entry) => {
+        uniquePeople.add(entry.person);
+      });
+    });
+  });
+
+  return {
+    sessionsCount: sportSessions.length,
+    exerciseCount: uniqueExercises.size,
+    peopleCount: uniquePeople.size,
+    totalEntries,
+    lastSession: sportSessions[sportSessions.length - 1],
+  };
+}
+
+function formatSportValue(value) {
+  return Number.isInteger(value) ? value : String(value).replace(".", ",");
+}
+
+function DashboardView({
+  habits,
+  habitData,
+  sportSessions,
+  onOpenHabits,
+  onOpenSport,
+}) {
+  const habitOverview = getHabitOverview(habits, habitData);
+  const sportOverview = getSportOverview(sportSessions);
+
+  return (
+    <div className="w-full max-w-6xl mx-auto py-2">
+      <div className="mb-8 flex flex-col gap-2">
+        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#9de2ba]">
+          Accueil
+        </div>
+        <h1 className="text-5xl font-bold tracking-tight">
+          Dashboard global
+        </h1>
+        <p className="text-gray-300 max-w-2xl">
+          Vue rapide de tes habitudes et de ton activite sport.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <DashboardStatCard
+          icon={ListChecks}
+          label="Habitudes"
+          value={habitOverview.habitsCount}
+          tone="green"
+        />
+        <DashboardStatCard
+          icon={Check}
+          label="Wins"
+          value={habitOverview.wins}
+          tone="green"
+        />
+        <DashboardStatCard
+          icon={X}
+          label="Relapses"
+          value={habitOverview.relapses}
+          tone="red"
+        />
+        <DashboardStatCard
+          icon={Dumbbell}
+          label="Seances sport"
+          value={sportOverview.sessionsCount}
+          tone="blue"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-6">
+        <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold">Synthese habitudes</h2>
+              <p className="text-sm text-gray-300 mt-1">
+                {habitOverview.trackedDays} journees suivies au total
+              </p>
+            </div>
+
+            <button
+              onClick={onOpenHabits}
+              className="rounded-2xl px-4 py-3 bg-[#232c52] hover:bg-[#303b6e] transition font-medium"
+            >
+              Ouvrir
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {habits.length > 0 ? (
+              habits.map((habit) => (
+                <HabitDashboardRow
+                  key={habit.id}
+                  habit={habit}
+                  habitData={habitData}
+                />
+              ))
+            ) : (
+              <div className="text-gray-300 bg-[#101735] border border-[#303b6e] rounded-2xl p-5">
+                Aucune habitude pour le moment.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold">Sport</h2>
+              <p className="text-sm text-gray-300 mt-1">
+                {sportOverview.exerciseCount} exercices, {sportOverview.peopleCount} personnes
+              </p>
+            </div>
+
+            <button
+              onClick={onOpenSport}
+              className="rounded-2xl px-4 py-3 bg-[#232c52] hover:bg-[#303b6e] transition font-medium"
+            >
+              Ouvrir
+            </button>
+          </div>
+
+          {sportOverview.lastSession && (
+            <div className="bg-[#101735] border border-[#303b6e] rounded-2xl p-5">
+              <div className="flex items-center gap-3 text-[#9de2ba] font-semibold mb-2">
+                <CalendarDays size={18} />
+                Derniere seance
+              </div>
+              <div className="text-3xl font-bold">
+                {sportOverview.lastSession.title}
+              </div>
+              <div className="text-gray-300 mt-2">
+                {sportOverview.lastSession.exercises.length} exercices notes
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function DashboardStatCard({ icon: Icon, label, value, tone }) {
+  const toneClasses = {
+    green: "text-[#9de2ba] bg-[#203d33] border-[#315843]",
+    red: "text-[#ffb0be] bg-[#3d252d] border-[#6a3140]",
+    blue: "text-[#b7c7ff] bg-[#202948] border-[#303b6e]",
+  };
+
+  return (
+    <div className="bg-[#161d38] border border-[#232c52] rounded-3xl p-5 shadow-2xl">
+      <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center mb-5 ${toneClasses[tone]}`}>
+        <Icon size={22} />
+      </div>
+      <div className="text-4xl font-bold">{value}</div>
+      <div className="text-sm text-gray-300 mt-1">{label}</div>
+    </div>
+  );
+}
+
+function HabitDashboardRow({ habit, habitData }) {
+  const stats = getHabitOverview([habit], habitData);
+
+  return (
+    <div className="bg-[#101735] border border-[#303b6e] rounded-2xl p-4 grid grid-cols-[1fr_auto] gap-4 items-center">
+      <div>
+        <div className="font-semibold">{habit.name}</div>
+        <div className="text-xs text-gray-400 mt-1">
+          Objectif {habit.targetDays || 90} jours
+        </div>
+      </div>
+
+      <div className="flex gap-3 text-sm font-semibold">
+        <span className="text-[#9de2ba]">{stats.wins} W</span>
+        <span className="text-[#ffb0be]">{stats.relapses} R</span>
+      </div>
+    </div>
+  );
+}
+
+function HabitsView({
+  selectedHabit,
+  habitData,
+  setHabitData,
+  settingsOpen,
+  setSettingsOpen,
+  setHabits,
+  updateTargetDays,
+  updateSelectedHabit,
+  exportData,
+  exportJson,
+  setExportJson,
+  importData,
+  copyExportData,
+  downloadExportData,
+  deleteHabit,
+  logRelapse,
+}) {
+  return (
+    <div className="w-full max-w-md mx-auto">
+      {selectedHabit ? (
+        <>
+          <div className="mb-6 flex justify-between items-center">
+            <div>
+              <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#9de2ba]">
+                Habitudes
+              </div>
+              <h1 className="text-3xl font-bold mt-1">{selectedHabit.name}</h1>
+            </div>
+
+            <button
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              className="w-12 h-12 rounded-2xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center"
+              title="Settings"
+            >
+              <Settings size={20} />
+            </button>
+          </div>
+
+          {settingsOpen && (
+            <div className="mb-6 bg-[#161d38] border border-[#303b6e] rounded-3xl p-5">
+              <div className="text-lg font-semibold mb-4">
+                Habit Settings
+              </div>
+
+              <label className="text-sm text-gray-300 block mb-2">
+                Habit Name
+              </label>
+
+              <input
+                type="text"
+                value={selectedHabit.name}
+                onChange={(e) => {
+                  setHabits((prev) =>
+                    prev.map((habit) =>
+                      habit.id === selectedHabit.id
+                        ? {
+                            ...habit,
+                            name: e.target.value,
+                          }
+                        : habit
+                    )
+                  );
+                }}
+                className="w-full mb-5 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
+              />
+
+              <label className="text-sm text-gray-300 block mb-2">
+                Goal Duration (days)
+              </label>
+
+              <input
+                type="number"
+                min="1"
+                value={selectedHabit.targetDays || 90}
+                onChange={(e) => updateTargetDays(e.target.value)}
+                className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
+              />
+
+              <div className="mt-5 space-y-3">
+                <label className="flex items-center justify-between gap-4 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 cursor-pointer">
+                  <span className="flex items-center gap-3 font-medium">
+                    <Clock size={18} />
+                    Countdown
+                  </span>
+
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selectedHabit.countdownEnabled)}
+                    onChange={(e) =>
+                      updateSelectedHabit({
+                        countdownEnabled: e.target.checked,
+                      })
+                    }
+                    className="h-5 w-5 accent-[#5fa37c]"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between gap-4 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 cursor-pointer">
+                  <span className="font-medium">Show seconds</span>
+
+                  <input
+                    type="checkbox"
+                    checked={selectedHabit.countdownShowSeconds !== false}
+                    disabled={!selectedHabit.countdownEnabled}
+                    onChange={(e) =>
+                      updateSelectedHabit({
+                        countdownShowSeconds: e.target.checked,
+                      })
+                    }
+                    className="h-5 w-5 accent-[#5fa37c] disabled:opacity-40"
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mt-6">
+                <button
+                  onClick={exportData}
+                  className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-2xl py-3 font-medium"
+                >
+                  Export
+                </button>
+
+                <label className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-2xl py-3 font-medium text-center cursor-pointer">
+                  Import
+
+                  <input
+                    type="file"
+                    accept="application/json"
+                    className="hidden"
+                    onChange={importData}
+                  />
+                </label>
+              </div>
+
+              {exportJson && (
+                <div className="mt-5 bg-[#0b1020] border border-[#303b6e] rounded-2xl p-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="font-medium">Export JSON</div>
+                    <button
+                      onClick={() => setExportJson("")}
+                      className="text-sm text-gray-300 hover:text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <textarea
+                    readOnly
+                    value={exportJson}
+                    className="w-full h-40 bg-[#161d38] border border-[#303b6e] rounded-xl p-3 text-xs text-gray-200 outline-none resize-none"
+                  />
+
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <button
+                      onClick={copyExportData}
+                      className="bg-[#242d56] hover:bg-[#2d3769] transition rounded-xl py-2 font-medium"
+                    >
+                      Copy JSON
+                    </button>
+
+                    <button
+                      onClick={downloadExportData}
+                      className="bg-[#315843] hover:bg-[#3d6b51] transition rounded-xl py-2 font-medium"
+                    >
+                      Download JSON
+                    </button>
+                  </div>
                 </div>
               )}
 
-              <HabitLifetimeStats
-                selectedHabit={selectedHabit}
-                habitData={habitData}
-              />
-
-              <HabitProgressBar
-                selectedHabit={selectedHabit}
-                habitData={habitData}
-              />
-
-              <LastRelapseCounter
-                selectedHabit={selectedHabit}
-                habitData={habitData}
-              />
-
-              <div className="mb-6 mt-6">
-                <button
-                  onClick={logRelapse}
-                  className="w-full bg-[#3d3131] hover:bg-[#4b3b3b] transition rounded-3xl py-5 text-lg font-medium shadow-lg border border-[#6e5858]"
-                >
-                  Log Relapse
-                </button>
-              </div>
-
-              <HabitCalendar
-                selectedHabit={selectedHabit}
-                habitData={habitData}
-                setHabitData={setHabitData}
-              />
-            </>
-          ) : (
-            <div className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-8 text-center shadow-2xl">
-              <h1 className="text-3xl font-bold mb-3">No habit yet</h1>
-              <p className="text-gray-300">
-                Use Add Habit in the sidebar to create one.
-              </p>
+              <button
+                onClick={deleteHabit}
+                className="w-full mt-4 bg-[#6a3140] hover:bg-[#7a394a] transition rounded-2xl py-3 font-medium"
+              >
+                Delete Habit
+              </button>
             </div>
           )}
+
+          <HabitLifetimeStats
+            selectedHabit={selectedHabit}
+            habitData={habitData}
+          />
+
+          <HabitProgressBar
+            selectedHabit={selectedHabit}
+            habitData={habitData}
+          />
+
+          <LastRelapseCounter
+            selectedHabit={selectedHabit}
+            habitData={habitData}
+          />
+
+          <div className="mb-6 mt-6">
+            <button
+              onClick={logRelapse}
+              className="w-full bg-[#3d3131] hover:bg-[#4b3b3b] transition rounded-3xl py-5 text-lg font-medium shadow-lg border border-[#6e5858]"
+            >
+              Log Relapse
+            </button>
+          </div>
+
+          <HabitCalendar
+            selectedHabit={selectedHabit}
+            habitData={habitData}
+            setHabitData={setHabitData}
+          />
+        </>
+      ) : (
+        <div className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-8 text-center shadow-2xl">
+          <h1 className="text-3xl font-bold mb-3">No habit yet</h1>
+          <p className="text-gray-300">
+            Use Add Habit in the sidebar to create one.
+          </p>
         </div>
-      </main>
+      )}
+    </div>
+  );
+}
+
+function SportView({ sportSessions }) {
+  const overview = getSportOverview(sportSessions);
+
+  return (
+    <div className="w-full max-w-6xl mx-auto py-2">
+      <div className="mb-8 flex flex-col gap-2">
+        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#b7c7ff]">
+          Sport
+        </div>
+        <h1 className="text-5xl font-bold tracking-tight">
+          Suivi sport
+        </h1>
+        <p className="text-gray-300 max-w-2xl">
+          Base ouverte pour suivre muscu, course, randonnee ou autre activite.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <DashboardStatCard
+          icon={CalendarDays}
+          label="Seances"
+          value={overview.sessionsCount}
+          tone="blue"
+        />
+        <DashboardStatCard
+          icon={Activity}
+          label="Exercices"
+          value={overview.exerciseCount}
+          tone="green"
+        />
+        <DashboardStatCard
+          icon={Trophy}
+          label="Performances"
+          value={overview.totalEntries}
+          tone="green"
+        />
+      </div>
+
+      <div className="space-y-6">
+        {sportSessions.map((session) => (
+          <section
+            key={session.id}
+            className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+              <div>
+                <div className="text-sm font-semibold text-[#9de2ba]">
+                  {session.type}
+                </div>
+                <h2 className="text-3xl font-bold mt-1">{session.title}</h2>
+              </div>
+              <div className="rounded-2xl bg-[#232c52] border border-[#303b6e] px-4 py-3 text-sm text-gray-300">
+                {session.exercises.length} exercices
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {session.exercises.map((exercise) => (
+                <div
+                  key={`${session.id}-${exercise.name}`}
+                  className="bg-[#101735] border border-[#303b6e] rounded-2xl p-5"
+                >
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <div className="text-xl font-bold">{exercise.name}</div>
+                      {exercise.detail && (
+                        <div className="text-sm text-gray-400 mt-1">
+                          {exercise.detail}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {exercise.entries.map((entry) => (
+                      <div
+                        key={`${entry.person}-${entry.value}`}
+                        className="flex items-center justify-between gap-3 rounded-xl bg-[#232c52] px-4 py-3"
+                      >
+                        <span className="font-medium">{entry.person}</span>
+                        <span className="text-[#9de2ba] font-bold">
+                          {formatSportValue(entry.value)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
