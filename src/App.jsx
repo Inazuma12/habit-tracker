@@ -24,77 +24,6 @@ import {
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
-const DEFAULT_SPORT_SESSIONS = [
-  {
-    id: "2026-07-02",
-    date: "2026-07-02",
-    title: "Jeudi 2 Juillet",
-    type: "Muscu",
-    exercises: [
-      {
-        name: "Traction",
-        series: 1,
-        value: 32,
-      },
-      {
-        name: "Tirage horizontale",
-        series: 1,
-        value: 25,
-      },
-      {
-        name: "Soulever de Terre",
-        detail: "Bar 20",
-        series: 1,
-        value: 12.5,
-      },
-      {
-        name: "Bar Biceps",
-        series: 1,
-        value: 10,
-      },
-      {
-        name: "Marteaux",
-        detail: "Serie de 12",
-        series: 1,
-        value: 5,
-      },
-    ],
-  },
-  {
-    id: "2026-07-07",
-    date: "2026-07-07",
-    title: "Mardi 7 Juillet",
-    type: "Muscu",
-    exercises: [
-      {
-        name: "Alter Push",
-        series: 1,
-        value: 14,
-      },
-      {
-        name: "Bar Incline",
-        series: 1,
-        value: 0,
-      },
-      {
-        name: "Triceps Tirage Vertical",
-        series: 1,
-        value: 6.8,
-      },
-      {
-        name: "Polie Pec Tirage Haut",
-        series: 1,
-        value: 4.5,
-      },
-      {
-        name: "Epaule",
-        series: 1,
-        value: 4,
-      },
-    ],
-  },
-];
-
 const MAIN_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "habits", label: "Habitudes", icon: ListChecks },
@@ -291,7 +220,7 @@ export default function HabitTrackerApp() {
 
   const [sportSessions, setSportSessions] = useState(() => {
     const saved = localStorage.getItem("sport-sessions");
-    return saved ? JSON.parse(saved) : DEFAULT_SPORT_SESSIONS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const selectedHabit =
@@ -414,7 +343,7 @@ export default function HabitTrackerApp() {
         setHabits(parsed.habits || []);
         setHabitData(parsed.habitData || {});
         setSelectedHabitId(parsed.selectedHabitId || null);
-        setSportSessions(parsed.sportSessions || DEFAULT_SPORT_SESSIONS);
+        setSportSessions(parsed.sportSessions || []);
 
         setSettingsOpen(false);
       } catch {
