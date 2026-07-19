@@ -14,6 +14,7 @@ import {
   Settings,
   Flag,
   Landmark,
+  Link2,
   Clock,
   LayoutDashboard,
   ListChecks,
@@ -581,6 +582,9 @@ export default function HabitTrackerApp() {
 
 function FinanceView() {
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  const [accountSetupOpen, setAccountSetupOpen] = useState(false);
+  const [connectingSourceId, setConnectingSourceId] = useState(null);
+  const [bankError, setBankError] = useState("");
   const [financeSources, setFinanceSources] = useState(() => {
     const saved = localStorage.getItem("finance-sources");
     return saved ? JSON.parse(saved) : [];
@@ -590,27 +594,134 @@ function FinanceView() {
     localStorage.setItem("finance-sources", JSON.stringify(financeSources));
   }, [financeSources]);
 
-  function addBanquePostale() {
-    setFinanceSources((sources) =>
-      sources.some((source) => source.id === "la-banque-postale")
-        ? sources
-        : [
-            ...sources,
-            {
-              id: "la-banque-postale",
-              category: "bank",
-              name: "La Banque Postale",
-              accountName: "Compte courant",
-            },
-          ]
-    );
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const code = query.get("code");
+    const state = query.get("state");
+
+    if (window.location.pathname !== "/bank-callback" || !code || !state) {
+      return;
+    }
+
+    // Le code OAuth est à usage unique. Nettoyer l'URL immédiatement empêche
+    // React StrictMode de traiter deux fois le même retour en développement.
+    window.history.replaceState({}, "", "/");
+
+    fetch("/api/bank/callback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, state }),
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : {};
+        if (!response.ok) throw new Error(data.error || "Synchronisation impossible");
+        if (!data.accounts.length) throw new Error("Aucun compte autorisé n’a été trouvé");
+        return data;
+      })
+      .then((data) => {
+        setBankError("");
+        setFinanceSources((sources) =>
+          sources.flatMap((source) => {
+            if (source.id !== data.sourceId) return source;
+
+            return data.accounts.map((account, index) => ({
+              ...source,
+              id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+              accountName: account.name || source.accountName,
+              lastFour: account.iban?.slice(-4) || source.lastFour,
+              balance: account.balance,
+              currency: account.currency,
+              bankAccountId: account.accountId,
+              bankSessionId: data.sessionId,
+              connectionStatus: "connected",
+              lastSyncAt: new Date().toISOString(),
+            }));
+          })
+        );
+      })
+      .catch((error) => setBankError(error.message))
+      .finally(() => setConnectingSourceId(null));
+  }, []);
+
+  const connectedBalance = financeSources.reduce(
+    (total, source) => total + (Number.isFinite(source.balance) ? source.balance : 0),
+    0
+  );
+  const connectedSources = financeSources.filter((source) =>
+    Number.isFinite(source.balance)
+  );
+  const formattedTotal = new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+  }).format(connectedBalance);
+
+  function openBanquePostaleSetup() {
     setSourceModalOpen(false);
+    setAccountSetupOpen(true);
+  }
+
+  function saveBanquePostaleAccount(account) {
+    setFinanceSources((sources) => [
+      ...sources,
+      {
+        id: `la-banque-postale-${Date.now()}`,
+        category: "bank",
+        name: "La Banque Postale",
+        accountName: account.accountName,
+        accountType: account.accountType,
+        lastFour: account.lastFour,
+        connectionStatus: "pending",
+      },
+    ]);
+    setAccountSetupOpen(false);
   }
 
   function removeFinanceSource(sourceId) {
     setFinanceSources((sources) =>
       sources.filter((source) => source.id !== sourceId)
     );
+  }
+
+  async function connectFinanceSource(sourceId) {
+    setConnectingSourceId(sourceId);
+    setBankError("");
+
+    try {
+      const response = await fetch("/api/bank/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceId }),
+      });
+      const responseText = await response.text();
+      let data = {};
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          throw new Error("Le serveur bancaire a renvoyé une réponse invalide");
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            (response.status >= 500
+              ? "Le serveur bancaire local ne répond pas. Redémarre l’application avec npm run dev."
+              : "Impossible de démarrer la connexion")
+        );
+      }
+
+      if (!data.link) {
+        throw new Error("La connexion bancaire n’a pas renvoyé de lien sécurisé");
+      }
+
+      window.location.assign(data.link);
+    } catch (error) {
+      setBankError(error.message);
+      setConnectingSourceId(null);
+    }
   }
 
   return (
@@ -633,6 +744,16 @@ function FinanceView() {
           <Plus size={19} /> Ajouter une source
         </button>
       </div>
+
+      {bankError && (
+        <div className="mb-6 rounded-2xl bg-[#3d252d] border border-[#d16a7f] px-5 py-4 text-[#ffb0be] flex items-start justify-between gap-4">
+          <div>
+            <div className="font-semibold">Connexion bancaire impossible</div>
+            <div className="text-sm mt-1">{bankError}</div>
+          </div>
+          <button type="button" onClick={() => setBankError("")} title="Fermer"><X size={18} /></button>
+        </div>
+      )}
 
       {financeSources.length === 0 ? (
         <section className="bg-[#161d38] border border-dashed border-[#303b6e] rounded-[32px] px-6 py-16 shadow-2xl text-center flex flex-col items-center">
@@ -663,7 +784,7 @@ function FinanceView() {
                 Capital total
               </div>
               <div className="text-5xl sm:text-6xl font-bold tracking-tight">
-                Solde indisponible
+                {connectedSources.length ? formattedTotal : "Solde indisponible"}
               </div>
               <div className="text-sm text-gray-400 mt-3">
                 Le montant apparaîtra après la connexion des comptes.
@@ -688,13 +809,21 @@ function FinanceView() {
                     </div>
                     <div>
                       <h3 className="text-lg font-semibold">{source.accountName}</h3>
-                      <p className="text-sm text-gray-300 mt-1">{source.name}</p>
+                      <p className="text-sm text-gray-300 mt-1">
+                        {source.name}{source.lastFour ? ` · •••• ${source.lastFour}` : ""}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 sm:text-right">
                     <div>
-                      <div className="text-2xl font-bold">Solde indisponible</div>
-                      <div className="text-xs text-gray-400 mt-2">Connexion bancaire à venir</div>
+                      <div className="text-2xl font-bold">
+                        {Number.isFinite(source.balance)
+                          ? new Intl.NumberFormat("fr-FR", { style: "currency", currency: source.currency || "EUR" }).format(source.balance)
+                          : "Solde indisponible"}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-2">
+                        {source.connectionStatus === "connected" ? "Compte connecté en lecture seule" : "Connexion bancaire requise"}
+                      </div>
                     </div>
                     <button
                       type="button"
@@ -707,8 +836,19 @@ function FinanceView() {
                   </div>
                 </div>
                 <div className="mt-6 pt-5 border-t border-[#303b6e] flex items-center gap-2 text-sm text-gray-300">
-                  <span className="w-2 h-2 rounded-full bg-[#ffd166]" />
-                  Source ajoutée · Mise à jour automatique non configurée
+                  <span className={`w-2 h-2 rounded-full ${source.connectionStatus === "connected" ? "bg-[#5fa37c]" : "bg-[#ffd166]"}`} />
+                  <span className="flex-1">
+                    {source.connectionStatus === "connected" ? "Synchronisé avec La Banque Postale" : "Compte paramétré · Connexion bancaire requise"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => connectFinanceSource(source.id)}
+                    disabled={connectingSourceId === source.id}
+                    className="rounded-xl px-4 py-2 bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-60 disabled:cursor-wait transition font-semibold flex items-center gap-2"
+                  >
+                    <Link2 size={16} />
+                    {connectingSourceId === source.id ? "Connexion…" : source.connectionStatus === "connected" ? "Reconnecter" : "Connecter"}
+                  </button>
                 </div>
               </section>
             ))}
@@ -718,16 +858,22 @@ function FinanceView() {
 
       {sourceModalOpen && (
         <AddFinanceSourceModal
-          banquePostaleAdded={financeSources.some((source) => source.id === "la-banque-postale")}
-          onAddBanquePostale={addBanquePostale}
+          onSelectBanquePostale={openBanquePostaleSetup}
           onClose={() => setSourceModalOpen(false)}
+        />
+      )}
+
+      {accountSetupOpen && (
+        <BanquePostaleSetupModal
+          onSave={saveBanquePostaleAccount}
+          onClose={() => setAccountSetupOpen(false)}
         />
       )}
     </div>
   );
 }
 
-function AddFinanceSourceModal({ banquePostaleAdded, onAddBanquePostale, onClose }) {
+function AddFinanceSourceModal({ onSelectBanquePostale, onClose }) {
   const categories = [
     { id: "bank", label: "Banque", icon: Landmark, available: true },
     { id: "exchange", label: "Exchange crypto", icon: Bitcoin, available: false },
@@ -763,20 +909,118 @@ function AddFinanceSourceModal({ banquePostaleAdded, onAddBanquePostale, onClose
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400 mb-3">Banques disponibles</div>
         <button
           type="button"
-          onClick={onAddBanquePostale}
-          disabled={banquePostaleAdded}
-          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] disabled:opacity-50 disabled:cursor-not-allowed transition p-4 flex items-center gap-4 text-left"
+          onClick={onSelectBanquePostale}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left"
         >
           <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
             <Landmark size={23} />
           </span>
           <span className="flex-1">
             <span className="block font-semibold">La Banque Postale</span>
-            <span className="block text-sm text-gray-300 mt-1">{banquePostaleAdded ? "Déjà ajoutée" : "Ajouter cette banque"}</span>
+            <span className="block text-sm text-gray-300 mt-1">Configurer un compte</span>
           </span>
-          {banquePostaleAdded ? <Check size={20} /> : <Plus size={20} />}
+          <ChevronRight size={20} />
         </button>
       </div>
+    </div>
+  );
+}
+
+function BanquePostaleSetupModal({ onSave, onClose }) {
+  const accountTypes = [
+    { id: "checking", label: "Compte courant" },
+    { id: "livret-a", label: "Livret A" },
+    { id: "ldds", label: "LDDS" },
+    { id: "savings", label: "Autre compte épargne" },
+  ];
+  const [accountType, setAccountType] = useState("checking");
+  const [accountName, setAccountName] = useState("Compte courant");
+  const [lastFour, setLastFour] = useState("");
+
+  function chooseAccountType(type) {
+    setAccountType(type.id);
+    setAccountName(type.label);
+  }
+
+  function submitAccount(event) {
+    event.preventDefault();
+    const trimmedName = accountName.trim();
+
+    if (!trimmedName) {
+      return;
+    }
+
+    onSave({
+      accountType,
+      accountName: trimmedName,
+      lastFour: lastFour.trim(),
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <form onSubmit={submitAccount} className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2">
+              <Landmark size={17} /> La Banque Postale
+            </div>
+            <div className="text-2xl font-bold">Choisir le compte</div>
+            <div className="text-sm text-gray-300 mt-1">
+              Ces informations préparent l’affichage avant la connexion bancaire.
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer">
+            <X size={18} />
+          </button>
+        </div>
+
+        <label className="block text-sm font-semibold mb-3">Type de compte</label>
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          {accountTypes.map((type) => (
+            <button
+              key={type.id}
+              type="button"
+              onClick={() => chooseAccountType(type)}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${accountType === type.id ? "bg-[#294a3b] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e] hover:bg-[#303b6e]"}`}
+            >
+              <span className="font-semibold text-sm">{type.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="finance-account-name">Nom d’affichage</label>
+        <input
+          id="finance-account-name"
+          value={accountName}
+          onChange={(event) => setAccountName(event.target.value)}
+          className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white mb-5"
+          placeholder="Ex. Compte principal"
+        />
+
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="finance-account-last-four">
+          4 derniers chiffres du compte <span className="text-gray-400">(facultatif)</span>
+        </label>
+        <input
+          id="finance-account-last-four"
+          value={lastFour}
+          onChange={(event) => setLastFour(event.target.value.replace(/\D/g, "").slice(0, 4))}
+          inputMode="numeric"
+          maxLength={4}
+          className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white"
+          placeholder="1234"
+        />
+
+        <div className="mt-5 rounded-2xl bg-[#101735] border border-[#303b6e] p-4 text-sm text-gray-300 flex gap-3">
+          <Link2 size={19} className="shrink-0 text-[#9de2ba]" />
+          <p>Aucun identifiant bancaire n’est demandé ni enregistré à cette étape. La connexion sécurisée sera ajoutée ensuite.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <button type="button" onClick={onClose} className="bg-[#232c52] hover:bg-[#303b6e] transition rounded-2xl py-3 font-medium">Retour</button>
+          <button type="submit" className="bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] transition rounded-2xl py-3 font-semibold">Ajouter le compte</button>
+        </div>
+      </form>
     </div>
   );
 }
