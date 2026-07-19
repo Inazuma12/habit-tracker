@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  Bitcoin,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +22,7 @@ import {
   Sun,
   Trash2,
   Trophy,
+  Wallet,
   WalletCards,
 } from "lucide-react";
 
@@ -578,83 +580,203 @@ export default function HabitTrackerApp() {
 }
 
 function FinanceView() {
-  const placeholderBalance = 0;
-  const formattedBalance = new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-  }).format(placeholderBalance);
+  const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  const [financeSources, setFinanceSources] = useState(() => {
+    const saved = localStorage.getItem("finance-sources");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem("finance-sources", JSON.stringify(financeSources));
+  }, [financeSources]);
+
+  function addBanquePostale() {
+    setFinanceSources((sources) =>
+      sources.some((source) => source.id === "la-banque-postale")
+        ? sources
+        : [
+            ...sources,
+            {
+              id: "la-banque-postale",
+              category: "bank",
+              name: "La Banque Postale",
+              accountName: "Compte courant",
+            },
+          ]
+    );
+    setSourceModalOpen(false);
+  }
+
+  function removeFinanceSource(sourceId) {
+    setFinanceSources((sources) =>
+      sources.filter((source) => source.id !== sourceId)
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto py-2">
-      <div className="mb-8 flex flex-col gap-2">
-        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#9de2ba]">
-          Patrimoine
+      <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#9de2ba]">
+            Patrimoine
+          </div>
+          <h1 className="text-5xl font-bold tracking-tight">Finance</h1>
+          <p className="text-gray-300 max-w-2xl">
+            Regroupe tes banques, exchanges crypto et wallets au même endroit.
+          </p>
         </div>
-        <h1 className="text-5xl font-bold tracking-tight">Finance</h1>
-        <p className="text-gray-300 max-w-2xl">
-          Retrouve ici tes comptes et, bientôt, le détail de tes revenus et de
-          tes dépenses.
-        </p>
+        <button
+          type="button"
+          onClick={() => setSourceModalOpen(true)}
+          className="w-fit shrink-0 rounded-2xl px-5 py-3 bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] transition font-semibold flex items-center gap-2"
+        >
+          <Plus size={19} /> Ajouter une source
+        </button>
       </div>
 
-      <section className="relative overflow-hidden bg-[#161d38] border border-[#232c52] rounded-[32px] p-7 shadow-2xl mb-6">
-        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[#315843] opacity-30 blur-3xl" />
-        <div className="relative flex flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
+      {financeSources.length === 0 ? (
+        <section className="bg-[#161d38] border border-dashed border-[#303b6e] rounded-[32px] px-6 py-16 shadow-2xl text-center flex flex-col items-center">
+          <div className="w-16 h-16 rounded-3xl bg-[#232c52] border border-[#303b6e] flex items-center justify-center text-[#9de2ba] mb-5">
+            <WalletCards size={29} />
+          </div>
+          <h2 className="text-2xl font-bold">Aucune source financière</h2>
+          <p className="text-gray-300 max-w-md mt-2 mb-6">
+            Ajoute ta première banque ou un autre portefeuille pour commencer.
+          </p>
+          <button
+            type="button"
+            onClick={() => setSourceModalOpen(true)}
+            className="rounded-2xl px-5 py-3 bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition font-semibold flex items-center gap-2"
+          >
+            <Plus size={19} /> Ajouter ma première source
+          </button>
+        </section>
+      ) : (
+        <>
+          <section className="relative overflow-hidden bg-[#161d38] border border-[#232c52] rounded-[32px] p-7 shadow-2xl mb-6">
+            <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[#315843] opacity-30 blur-3xl" />
+            <div className="relative">
+              <div className="flex items-center gap-3 text-sm text-gray-300 mb-4">
+                <span className="w-10 h-10 rounded-2xl bg-[#232c52] border border-[#303b6e] flex items-center justify-center text-[#9de2ba]">
+                  <WalletCards size={20} />
+                </span>
+                Capital total
+              </div>
+              <div className="text-5xl sm:text-6xl font-bold tracking-tight">
+                Solde indisponible
+              </div>
+              <div className="text-sm text-gray-400 mt-3">
+                Le montant apparaîtra après la connexion des comptes.
+              </div>
+            </div>
+          </section>
+
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold">Mes sources</h2>
+            <p className="text-sm text-gray-300 mt-1">
+              {financeSources.length} source{financeSources.length > 1 ? "s" : ""}
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {financeSources.map((source) => (
+              <section key={source.id} className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+                      <Landmark size={26} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">{source.accountName}</h3>
+                      <p className="text-sm text-gray-300 mt-1">{source.name}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 sm:text-right">
+                    <div>
+                      <div className="text-2xl font-bold">Solde indisponible</div>
+                      <div className="text-xs text-gray-400 mt-2">Connexion bancaire à venir</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeFinanceSource(source.id)}
+                      className="w-10 h-10 shrink-0 rounded-xl bg-[#6a3140] hover:bg-[#7a394a] transition flex items-center justify-center"
+                      title="Supprimer cette source"
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-6 pt-5 border-t border-[#303b6e] flex items-center gap-2 text-sm text-gray-300">
+                  <span className="w-2 h-2 rounded-full bg-[#ffd166]" />
+                  Source ajoutée · Mise à jour automatique non configurée
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
+      )}
+
+      {sourceModalOpen && (
+        <AddFinanceSourceModal
+          banquePostaleAdded={financeSources.some((source) => source.id === "la-banque-postale")}
+          onAddBanquePostale={addBanquePostale}
+          onClose={() => setSourceModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddFinanceSourceModal({ banquePostaleAdded, onAddBanquePostale, onClose }) {
+  const categories = [
+    { id: "bank", label: "Banque", icon: Landmark, available: true },
+    { id: "exchange", label: "Exchange crypto", icon: Bitcoin, available: false },
+    { id: "wallet", label: "Wallet", icon: Wallet, available: false },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <div className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
           <div>
-            <div className="flex items-center gap-3 text-sm text-gray-300 mb-4">
-              <span className="w-10 h-10 rounded-2xl bg-[#232c52] border border-[#303b6e] flex items-center justify-center text-[#9de2ba]">
-                <WalletCards size={20} />
-              </span>
-              Capital total
-            </div>
-            <div className="text-5xl sm:text-6xl font-bold tracking-tight">
-              {formattedBalance}
-            </div>
+            <div className="text-2xl font-bold">Ajouter une source</div>
+            <div className="text-sm text-gray-300 mt-1">Choisis le type de capital à suivre.</div>
           </div>
-
-          <div className="w-fit rounded-full border border-[#303b6e] bg-[#101735] px-4 py-2 text-sm text-gray-300">
-            Valeur provisoire
-          </div>
-        </div>
-      </section>
-
-      <div className="mb-4 flex items-end justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold">Mes comptes</h2>
-          <p className="text-sm text-gray-300 mt-1">1 compte affiché</p>
-        </div>
-      </div>
-
-      <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
-              <Landmark size={26} />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold">Compte courant</h3>
-              <p className="text-sm text-gray-300 mt-1">La Banque Postale</p>
-            </div>
-          </div>
-
-          <div className="sm:text-right">
-            <div className="text-3xl font-bold">{formattedBalance}</div>
-            <div className="text-xs text-gray-400 mt-2">
-              Solde en attente de connexion
-            </div>
-          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer">
+            <X size={18} />
+          </button>
         </div>
 
-        <div className="mt-6 pt-5 border-t border-[#303b6e] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 text-sm text-gray-300">
-            <span className="w-2 h-2 rounded-full bg-[#ffd166]" />
-            Mise à jour automatique non configurée
-          </div>
-          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8c96c9]">
-            Données de démonstration
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-7">
+          {categories.map((category) => {
+            const Icon = category.icon;
+            return (
+              <div key={category.id} className={`rounded-2xl border p-4 ${category.available ? "bg-[#294a3b] border-[#5fa37c]" : "bg-[#101735] border-[#303b6e] opacity-60"}`}>
+                <Icon size={22} className="mb-3" />
+                <div className="font-semibold text-sm">{category.label}</div>
+                {!category.available && <div className="text-xs text-gray-400 mt-1">Bientôt</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400 mb-3">Banques disponibles</div>
+        <button
+          type="button"
+          onClick={onAddBanquePostale}
+          disabled={banquePostaleAdded}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] disabled:opacity-50 disabled:cursor-not-allowed transition p-4 flex items-center gap-4 text-left"
+        >
+          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+            <Landmark size={23} />
           </span>
-        </div>
-      </section>
+          <span className="flex-1">
+            <span className="block font-semibold">La Banque Postale</span>
+            <span className="block text-sm text-gray-300 mt-1">{banquePostaleAdded ? "Déjà ajoutée" : "Ajouter cette banque"}</span>
+          </span>
+          {banquePostaleAdded ? <Check size={20} /> : <Plus size={20} />}
+        </button>
+      </div>
     </div>
   );
 }
