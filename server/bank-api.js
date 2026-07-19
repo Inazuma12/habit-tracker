@@ -9,6 +9,10 @@ const APPLICATION_ID = process.env.ENABLE_BANKING_APPLICATION_ID;
 const PRIVATE_KEY_PATH = process.env.ENABLE_BANKING_PRIVATE_KEY_PATH;
 const APP_URL = process.env.APP_URL || "https://localhost:5173";
 const pendingConnections = new Map();
+const SUPPORTED_BANKS = {
+  "la-banque-postale": ["la banque postale", "banque postale"],
+  boursobank: ["boursobank", "boursorama"],
+};
 
 let privateKey = null;
 
@@ -107,7 +111,35 @@ async function enableBankingRequest(path, options = {}) {
   return data;
 }
 
-async function createConnection(sourceId) {
+function normalizeBankName(value) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+async function resolveBankName(bankId) {
+  const aliases = SUPPORTED_BANKS[bankId];
+  if (!aliases) throw new Error("Banque non prise en charge");
+
+  const data = await enableBankingRequest(
+    "/aspsps?country=FR&psu_type=personal&service=AIS"
+  );
+  const bank = (data.aspsps || []).find((aspsp) => {
+    const normalizedName = normalizeBankName(aspsp.name);
+    return aliases.some((alias) => normalizedName.includes(alias));
+  });
+
+  if (!bank) {
+    throw new Error("Cette banque n’est pas disponible actuellement chez Enable Banking");
+  }
+
+  return bank.name;
+}
+
+async function createConnection(sourceId, bankId) {
+  const bankName = await resolveBankName(bankId);
+
   const state = randomUUID();
   const redirectUrl = new URL("/bank-callback", APP_URL);
   const validUntil = new Date();
@@ -117,7 +149,7 @@ async function createConnection(sourceId) {
     method: "POST",
     body: JSON.stringify({
       access: { valid_until: validUntil.toISOString() },
-      aspsp: { name: "La Banque Postale", country: "FR" },
+      aspsp: { name: bankName, country: "FR" },
       state,
       redirect_url: redirectUrl.toString(),
       psu_type: "personal",
@@ -125,7 +157,7 @@ async function createConnection(sourceId) {
     }),
   });
 
-  pendingConnections.set(state, { sourceId, createdAt: Date.now() });
+  pendingConnections.set(state, { sourceId, bankId, createdAt: Date.now() });
   return { state, link: authorization.url };
 }
 
@@ -145,6 +177,7 @@ function normalizeBalance(accountId, account, payload) {
     currency:
       preferred?.balance_amount?.currency || account.currency || "EUR",
     name: account.name || account.product || "Compte bancaire",
+    accountTypeCode: account.cash_account_type || null,
     iban,
   };
 }
@@ -190,10 +223,18 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/bank/connect") {
       const body = await readJson(request);
-      if (typeof body.sourceId !== "string" || body.sourceId.length > 100) {
+      if (
+        typeof body.sourceId !== "string" ||
+        body.sourceId.length > 100 ||
+        typeof body.bankId !== "string"
+      ) {
         return sendJson(response, 400, { error: "Source bancaire invalide" });
       }
-      return sendJson(response, 200, await createConnection(body.sourceId));
+      return sendJson(
+        response,
+        200,
+        await createConnection(body.sourceId, body.bankId)
+      );
     }
 
     if (request.method === "POST" && url.pathname === "/api/bank/callback") {

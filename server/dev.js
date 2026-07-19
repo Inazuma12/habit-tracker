@@ -4,7 +4,12 @@ import process from "node:process";
 const children = [
   spawn(
     process.execPath,
-    ["--env-file-if-exists=.env", "server/bank-api.js"],
+    [
+      "--watch",
+      "--watch-preserve-output",
+      "--env-file-if-exists=.env",
+      "server/bank-api.js",
+    ],
     { stdio: "inherit" }
   ),
   spawn(process.execPath, ["node_modules/vite/bin/vite.js"], {

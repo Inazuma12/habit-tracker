@@ -583,6 +583,7 @@ export default function HabitTrackerApp() {
 function FinanceView() {
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [accountSetupOpen, setAccountSetupOpen] = useState(false);
+  const [selectedBank, setSelectedBank] = useState(null);
   const [connectingSourceId, setConnectingSourceId] = useState(null);
   const [bankError, setBankError] = useState("");
   const [financeSources, setFinanceSources] = useState(() => {
@@ -621,8 +622,12 @@ function FinanceView() {
       })
       .then((data) => {
         setBankError("");
-        setFinanceSources((sources) =>
-          sources.flatMap((source) => {
+        setFinanceSources((sources) => {
+          const replacedSource = sources.find((source) => source.id === data.sourceId);
+          const previousSessionId = replacedSource?.bankSessionId;
+
+          return sources.flatMap((source) => {
+            if (previousSessionId && source.bankSessionId === previousSessionId && source.id !== data.sourceId) return [];
             if (source.id !== data.sourceId) return source;
 
             return data.accounts.map((account, index) => ({
@@ -632,42 +637,59 @@ function FinanceView() {
               lastFour: account.iban?.slice(-4) || source.lastFour,
               balance: account.balance,
               currency: account.currency,
+              accountTypeCode: account.accountTypeCode,
               bankAccountId: account.accountId,
               bankSessionId: data.sessionId,
               connectionStatus: "connected",
               lastSyncAt: new Date().toISOString(),
             }));
-          })
-        );
+          });
+        });
       })
       .catch((error) => setBankError(error.message))
       .finally(() => setConnectingSourceId(null));
   }, []);
 
+  const isCardSource = (source) =>
+    source.accountTypeCode === "CARD" || /^carte\b/i.test(source.accountName || "");
+
   const connectedBalance = financeSources.reduce(
-    (total, source) => total + (Number.isFinite(source.balance) ? source.balance : 0),
+    (total, source) => total + (Number.isFinite(source.balance) && !isCardSource(source) ? source.balance : 0),
     0
   );
   const connectedSources = financeSources.filter((source) =>
-    Number.isFinite(source.balance)
+    Number.isFinite(source.balance) && !isCardSource(source)
   );
+  const financeGroups = (() => {
+    const groups = new Map();
+    financeSources.forEach((source) => {
+      const groupId = source.bankSessionId || source.id;
+      if (!groups.has(groupId)) groups.set(groupId, { id: groupId, name: source.name, sources: [] });
+      groups.get(groupId).sources.push(source);
+    });
+    return Array.from(groups.values());
+  })();
   const formattedTotal = new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "EUR",
   }).format(connectedBalance);
 
-  function openBanquePostaleSetup() {
+  function openBankSetup(bank) {
+    setSelectedBank(bank);
     setSourceModalOpen(false);
     setAccountSetupOpen(true);
   }
 
-  function saveBanquePostaleAccount(account) {
+  function saveBankAccount(account) {
+    if (!selectedBank) return;
+
     setFinanceSources((sources) => [
       ...sources,
       {
-        id: `la-banque-postale-${Date.now()}`,
+        id: `${selectedBank.id}-${Date.now()}`,
         category: "bank",
-        name: "La Banque Postale",
+        bankId: selectedBank.id,
+        name: selectedBank.name,
         accountName: account.accountName,
         accountType: account.accountType,
         lastFour: account.lastFour,
@@ -677,21 +699,29 @@ function FinanceView() {
     setAccountSetupOpen(false);
   }
 
-  function removeFinanceSource(sourceId) {
+  function removeFinanceGroup(group) {
+    const sourceIds = new Set(group.sources.map((source) => source.id));
     setFinanceSources((sources) =>
-      sources.filter((source) => source.id !== sourceId)
+      sources.filter((source) => !sourceIds.has(source.id))
     );
   }
 
-  async function connectFinanceSource(sourceId) {
-    setConnectingSourceId(sourceId);
+  async function connectFinanceSource(source) {
+    setConnectingSourceId(source.id);
     setBankError("");
 
     try {
       const response = await fetch("/api/bank/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceId }),
+        body: JSON.stringify({
+          sourceId: source.id,
+          bankId:
+            source.bankId ||
+            (source.name === "La Banque Postale"
+              ? "la-banque-postale"
+              : "boursobank"),
+        }),
       });
       const responseText = await response.text();
       let data = {};
@@ -786,86 +816,131 @@ function FinanceView() {
               <div className="text-5xl sm:text-6xl font-bold tracking-tight">
                 {connectedSources.length ? formattedTotal : "Solde indisponible"}
               </div>
-              <div className="text-sm text-gray-400 mt-3">
-                Le montant apparaîtra après la connexion des comptes.
-              </div>
+              {!connectedSources.length && (
+                <div className="text-sm text-gray-400 mt-3">
+                  Le montant apparaîtra après la connexion des comptes.
+                </div>
+              )}
             </div>
           </section>
 
           <div className="mb-4">
             <h2 className="text-2xl font-bold">Mes sources</h2>
             <p className="text-sm text-gray-300 mt-1">
-              {financeSources.length} source{financeSources.length > 1 ? "s" : ""}
+              {financeGroups.length} établissement{financeGroups.length > 1 ? "s" : ""}
             </p>
           </div>
 
           <div className="space-y-4">
-            {financeSources.map((source) => (
-              <section key={source.id} className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+            {financeGroups.map((group) => {
+              const mainSource = group.sources.find((source) => !isCardSource(source)) || group.sources[0];
+              const isConnected = group.sources.some((source) => source.connectionStatus === "connected");
+              const isConnecting = group.sources.some((source) => source.id === connectingSourceId);
+              const groupBalance = group.sources.reduce(
+                (total, source) => total + (Number.isFinite(source.balance) && !isCardSource(source) ? source.balance : 0),
+                0
+              );
+              const hasGroupBalance = group.sources.some(
+                (source) => Number.isFinite(source.balance) && !isCardSource(source)
+              );
+
+              return (
+              <section key={group.id} className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
                 <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-14 h-14 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
                       <Landmark size={26} />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold">{source.accountName}</h3>
+                      <h3 className="text-xl font-semibold">{group.name}</h3>
                       <p className="text-sm text-gray-300 mt-1">
-                        {source.name}{source.lastFour ? ` · •••• ${source.lastFour}` : ""}
+                        {group.sources.length} élément{group.sources.length > 1 ? "s" : ""} bancaire{group.sources.length > 1 ? "s" : ""}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 sm:text-right">
                     <div>
                       <div className="text-2xl font-bold">
-                        {Number.isFinite(source.balance)
-                          ? new Intl.NumberFormat("fr-FR", { style: "currency", currency: source.currency || "EUR" }).format(source.balance)
+                        {hasGroupBalance
+                          ? new Intl.NumberFormat("fr-FR", { style: "currency", currency: mainSource.currency || "EUR" }).format(groupBalance)
                           : "Solde indisponible"}
                       </div>
                       <div className="text-xs text-gray-400 mt-2">
-                        {source.connectionStatus === "connected" ? "Compte connecté en lecture seule" : "Connexion bancaire requise"}
+                        {isConnected ? "Comptes connectés en lecture seule" : "Connexion bancaire requise"}
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => removeFinanceSource(source.id)}
+                      onClick={() => removeFinanceGroup(group)}
                       className="w-10 h-10 shrink-0 rounded-xl bg-[#6a3140] hover:bg-[#7a394a] transition flex items-center justify-center"
-                      title="Supprimer cette source"
+                      title="Supprimer cet établissement"
                     >
                       <Trash2 size={17} />
                     </button>
                   </div>
                 </div>
+                <div className="mt-6 overflow-hidden rounded-2xl border border-[#232c52]">
+                  {group.sources.map((source, sourceIndex) => {
+                    const isCard = isCardSource(source);
+                    return (
+                      <div key={source.id} className={`flex flex-col gap-3 bg-[#101735] px-4 py-4 sm:flex-row sm:items-center sm:justify-between ${sourceIndex > 0 ? "border-t border-[#232c52]" : ""}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-9 h-9 shrink-0 rounded-xl bg-[#202948] flex items-center justify-center text-[#b7c7ff]">
+                            {isCard ? <WalletCards size={18} /> : <Landmark size={18} />}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-semibold truncate">{source.accountName}</div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              {isCard ? "Carte associée" : "Compte bancaire"}
+                              {source.lastFour ? ` · •••• ${source.lastFour}` : ""}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="sm:text-right">
+                          <div className="font-semibold">
+                            {Number.isFinite(source.balance)
+                              ? new Intl.NumberFormat("fr-FR", { style: "currency", currency: source.currency || "EUR" }).format(source.balance)
+                              : "Solde indisponible"}
+                          </div>
+                          {isCard && <div className="text-xs text-gray-400 mt-1">Non comptabilisée dans le capital</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
                 <div className="mt-6 pt-5 border-t border-[#303b6e] flex items-center gap-2 text-sm text-gray-300">
-                  <span className={`w-2 h-2 rounded-full ${source.connectionStatus === "connected" ? "bg-[#5fa37c]" : "bg-[#ffd166]"}`} />
+                  <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-[#5fa37c]" : "bg-[#ffd166]"}`} />
                   <span className="flex-1">
-                    {source.connectionStatus === "connected" ? "Synchronisé avec La Banque Postale" : "Compte paramétré · Connexion bancaire requise"}
+                    {isConnected ? `Synchronisé avec ${group.name}` : "Compte paramétré · Connexion bancaire requise"}
                   </span>
                   <button
                     type="button"
-                    onClick={() => connectFinanceSource(source.id)}
-                    disabled={connectingSourceId === source.id}
+                    onClick={() => connectFinanceSource(mainSource)}
+                    disabled={isConnecting}
                     className="rounded-xl px-4 py-2 bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-60 disabled:cursor-wait transition font-semibold flex items-center gap-2"
                   >
                     <Link2 size={16} />
-                    {connectingSourceId === source.id ? "Connexion…" : source.connectionStatus === "connected" ? "Reconnecter" : "Connecter"}
+                    {isConnecting ? "Connexion…" : isConnected ? "Reconnecter" : "Connecter"}
                   </button>
                 </div>
               </section>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
 
       {sourceModalOpen && (
         <AddFinanceSourceModal
-          onSelectBanquePostale={openBanquePostaleSetup}
+          onSelectBank={openBankSetup}
           onClose={() => setSourceModalOpen(false)}
         />
       )}
 
       {accountSetupOpen && (
-        <BanquePostaleSetupModal
-          onSave={saveBanquePostaleAccount}
+        <BankAccountSetupModal
+          bank={selectedBank}
+          onSave={saveBankAccount}
           onClose={() => setAccountSetupOpen(false)}
         />
       )}
@@ -873,11 +948,15 @@ function FinanceView() {
   );
 }
 
-function AddFinanceSourceModal({ onSelectBanquePostale, onClose }) {
+function AddFinanceSourceModal({ onSelectBank, onClose }) {
   const categories = [
     { id: "bank", label: "Banque", icon: Landmark, available: true },
     { id: "exchange", label: "Exchange crypto", icon: Bitcoin, available: false },
     { id: "wallet", label: "Wallet", icon: Wallet, available: false },
+  ];
+  const banks = [
+    { id: "la-banque-postale", name: "La Banque Postale" },
+    { id: "boursobank", name: "BoursoBank" },
   ];
 
   return (
@@ -907,26 +986,31 @@ function AddFinanceSourceModal({ onSelectBanquePostale, onClose }) {
         </div>
 
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400 mb-3">Banques disponibles</div>
-        <button
-          type="button"
-          onClick={onSelectBanquePostale}
-          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left"
-        >
-          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
-            <Landmark size={23} />
-          </span>
-          <span className="flex-1">
-            <span className="block font-semibold">La Banque Postale</span>
-            <span className="block text-sm text-gray-300 mt-1">Configurer un compte</span>
-          </span>
-          <ChevronRight size={20} />
-        </button>
+        <div className="space-y-3">
+          {banks.map((bank) => (
+            <button
+              key={bank.id}
+              type="button"
+              onClick={() => onSelectBank(bank)}
+              className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left"
+            >
+              <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+                <Landmark size={23} />
+              </span>
+              <span className="flex-1">
+                <span className="block font-semibold">{bank.name}</span>
+                <span className="block text-sm text-gray-300 mt-1">Configurer un compte</span>
+              </span>
+              <ChevronRight size={20} />
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function BanquePostaleSetupModal({ onSave, onClose }) {
+function BankAccountSetupModal({ bank, onSave, onClose }) {
   const accountTypes = [
     { id: "checking", label: "Compte courant" },
     { id: "livret-a", label: "Livret A" },
@@ -963,7 +1047,7 @@ function BanquePostaleSetupModal({ onSave, onClose }) {
         <div className="flex items-start justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2">
-              <Landmark size={17} /> La Banque Postale
+              <Landmark size={17} /> {bank?.name || "Banque"}
             </div>
             <div className="text-2xl font-bold">Choisir le compte</div>
             <div className="text-sm text-gray-300 mt-1">
