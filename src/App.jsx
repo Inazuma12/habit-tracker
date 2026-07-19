@@ -735,6 +735,7 @@ function FinanceView() {
   const [bankError, setBankError] = useState("");
   const autoSyncStarted = useRef(false);
   const automaticAssetsSyncStarted = useRef(false);
+  const syncBankSourceRef = useRef(null);
   const connectFinanceSourceRef = useRef(null);
   const [financeSources, setFinanceSources] = useState(() => {
     const saved = localStorage.getItem("finance-sources");
@@ -753,6 +754,7 @@ function FinanceView() {
   }, [financeSources]);
 
   useEffect(() => {
+    syncBankSourceRef.current = syncBankSource;
     connectFinanceSourceRef.current = connectFinanceSource;
   });
 
@@ -762,17 +764,27 @@ function FinanceView() {
     const isStale = (source) =>
       Date.now() - new Date(source.lastSyncAt || 0).getTime() >= staleAfter;
 
+    const bankSources = new Map();
     const walletSources = new Map();
     financeSources.forEach((source) => {
+      if (
+        source.category === "bank" &&
+        source.bankSessionId &&
+        source.connectionStatus === "connected" &&
+        isStale(source)
+      ) {
+        bankSources.set(source.bankSessionId, source);
+      }
       if (source.category === "wallet" && source.walletAddress && isStale(source)) {
         const key = `${source.walletScannerId || source.networkId}-${source.walletAddress}`;
         if (!walletSources.has(key)) walletSources.set(key, source);
       }
     });
-    if (!walletSources.size) return;
+    if (!bankSources.size && !walletSources.size) return;
 
     automaticAssetsSyncStarted.current = true;
     void (async () => {
+      for (const source of bankSources.values()) await syncBankSourceRef.current(source);
       for (const source of walletSources.values()) await connectFinanceSourceRef.current(source);
     })();
   }, [financeSources]);
@@ -1029,7 +1041,7 @@ function FinanceView() {
     );
   }
 
-  async function connectFinanceSource(source) {
+  async function connectFinanceSource(source, { allowBankAuthorization = false } = {}) {
     if (source.category === "exchange" && source.exchangeId === "coinbase") {
       return syncCoinbaseSource(source);
     }
@@ -1052,6 +1064,10 @@ function FinanceView() {
     }
     if (source.category !== "bank") {
       setBankError("Cette source ne peut pas être synchronisée");
+      return;
+    }
+    if (!allowBankAuthorization) {
+      setBankError(`${source.name} : clique sur Reconnecter pour ouvrir l’autorisation bancaire`);
       return;
     }
 
@@ -1407,7 +1423,7 @@ function FinanceView() {
                       if (mainSource.category === "bank" && mainSource.connectionStatus === "connected" && mainSource.bankSessionId) {
                         return syncBankSource(mainSource);
                       }
-                      return connectFinanceSource(mainSource);
+                      return connectFinanceSource(mainSource, { allowBankAuthorization: true });
                     }}
                     disabled={isConnecting}
                     className="rounded-xl px-4 py-2 bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-60 disabled:cursor-wait transition font-semibold flex items-center gap-2"

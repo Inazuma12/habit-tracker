@@ -632,12 +632,22 @@ async function completeConnection(code, state) {
     body: JSON.stringify({ code }),
   });
   const accounts = await Promise.all(
-    (session.accounts || []).map(async (account) => {
-      const accountId = account.uid;
+    (session.accounts || []).map(async (sessionAccount) => {
+      const accountId = typeof sessionAccount === "string"
+        ? sessionAccount
+        : sessionAccount.uid;
+      if (!accountId) throw new Error("Identifiant de compte bancaire manquant");
       const balances = await enableBankingRequest(
         `/accounts/${encodeURIComponent(accountId)}/balances`
       );
-      return normalizeBalance(accountId, account, balances);
+      const account = typeof sessionAccount === "string" ? {} : sessionAccount;
+      const normalized = normalizeBalance(accountId, account, balances);
+      if (typeof sessionAccount === "string") {
+        normalized.name = null;
+        normalized.accountTypeCode = null;
+        normalized.iban = null;
+      }
+      return normalized;
     })
   );
 
@@ -657,12 +667,22 @@ async function syncBankSession(sessionId) {
     `/sessions/${encodeURIComponent(sessionId)}`
   );
   const accounts = await Promise.all(
-    (session.accounts || []).map(async (account) => {
-      const accountId = account.uid;
+    (session.accounts || []).map(async (sessionAccount) => {
+      const accountId = typeof sessionAccount === "string"
+        ? sessionAccount
+        : sessionAccount.uid;
+      if (!accountId) throw new Error("Identifiant de compte bancaire manquant");
       const balances = await enableBankingRequest(
         `/accounts/${encodeURIComponent(accountId)}/balances`
       );
-      return normalizeBalance(accountId, account, balances);
+      const account = typeof sessionAccount === "string" ? {} : sessionAccount;
+      const normalized = normalizeBalance(accountId, account, balances);
+      if (typeof sessionAccount === "string") {
+        normalized.name = null;
+        normalized.accountTypeCode = null;
+        normalized.iban = null;
+      }
+      return normalized;
     })
   );
   return { sessionId, accounts, syncedAt: new Date().toISOString() };
