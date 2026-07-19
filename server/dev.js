@@ -12,7 +12,7 @@ const children = [
     ],
     { stdio: "inherit" }
   ),
-  spawn(process.execPath, ["node_modules/vite/bin/vite.js"], {
+  spawn(process.execPath, ["node_modules/vite/bin/vite.js", "--configLoader", "runner"], {
     stdio: "inherit",
   }),
 ];

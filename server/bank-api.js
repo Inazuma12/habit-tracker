@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { createSign, randomUUID } from "node:crypto";
+import { createSign, randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -8,6 +8,7 @@ const API_BASE = "https://api.enablebanking.com";
 const APPLICATION_ID = process.env.ENABLE_BANKING_APPLICATION_ID;
 const PRIVATE_KEY_PATH = process.env.ENABLE_BANKING_PRIVATE_KEY_PATH;
 const APP_URL = process.env.APP_URL || "https://localhost:5173";
+const COINBASE_CREDENTIALS_PATH = process.env.COINBASE_CREDENTIALS_PATH;
 const pendingConnections = new Map();
 const SUPPORTED_BANKS = {
   "la-banque-postale": ["la banque postale", "banque postale"],
@@ -15,6 +16,7 @@ const SUPPORTED_BANKS = {
 };
 
 let privateKey = null;
+let coinbaseCredentials = null;
 
 function sendJson(response, status, payload) {
   response.writeHead(status, {
@@ -109,6 +111,108 @@ async function enableBankingRequest(path, options = {}) {
   }
 
   return data;
+}
+
+async function getCoinbaseCredentials() {
+  if (!COINBASE_CREDENTIALS_PATH) {
+    throw new Error("COINBASE_CREDENTIALS_PATH n’est pas configuré");
+  }
+  if (!coinbaseCredentials) {
+    const file = await readFile(resolve(COINBASE_CREDENTIALS_PATH), "utf8");
+    const credentials = JSON.parse(file);
+    if (!credentials.name || !credentials.privateKey) {
+      throw new Error("Le fichier de clé Coinbase est invalide");
+    }
+    coinbaseCredentials = credentials;
+  }
+  return coinbaseCredentials;
+}
+
+async function createCoinbaseJwt(method, path) {
+  const { name, privateKey: key } = await getCoinbaseCredentials();
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64Url(JSON.stringify({
+    alg: "ES256",
+    typ: "JWT",
+    kid: name,
+    nonce: randomBytes(16).toString("hex"),
+  }));
+  const payload = base64Url(JSON.stringify({
+    iss: "cdp",
+    nbf: now,
+    exp: now + 120,
+    sub: name,
+    uri: `${method} api.coinbase.com${path}`,
+  }));
+  const unsignedToken = `${header}.${payload}`;
+  const signature = createSign("SHA256")
+    .update(unsignedToken)
+    .end()
+    .sign({ key, dsaEncoding: "ieee-p1363" })
+    .toString("base64url");
+  return `${unsignedToken}.${signature}`;
+}
+
+async function coinbaseRequest(path) {
+  const jwt = await createCoinbaseJwt("GET", path);
+  const response = await fetch(`https://api.coinbase.com${path}`, {
+    headers: { Authorization: `Bearer ${jwt}`, Accept: "application/json" },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      data.message ||
+      data.error_details ||
+      data.errorMessage ||
+      data.error ||
+      `Erreur Coinbase (${response.status})`
+    );
+  }
+  return data;
+}
+
+async function getEuroPrice(currency) {
+  if (currency === "EUR") return 1;
+  const productPath = `/api/v3/brokerage/market/products/${encodeURIComponent(`${currency}-EUR`)}`;
+  const response = await fetch(`https://api.coinbase.com${productPath}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (response.ok) {
+    const product = await response.json();
+    const price = Number(product.price);
+    if (Number.isFinite(price)) return price;
+  }
+
+  const ratesResponse = await fetch(
+    `https://api.coinbase.com/v2/exchange-rates?currency=${encodeURIComponent(currency)}`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!ratesResponse.ok) return null;
+  const rates = await ratesResponse.json();
+  const euroRate = Number(rates.data?.rates?.EUR);
+  return Number.isFinite(euroRate) ? euroRate : null;
+}
+
+async function syncCoinbase() {
+  const path = "/api/v3/brokerage/accounts";
+  const data = await coinbaseRequest(path);
+  const nonEmptyAccounts = (data.accounts || []).filter((account) => {
+    const amount = Number(account.available_balance?.value || 0);
+    return account.active !== false && Number.isFinite(amount) && amount !== 0;
+  });
+  const accounts = await Promise.all(nonEmptyAccounts.map(async (account) => {
+    const assetAmount = Number(account.available_balance.value);
+    const assetCurrency = account.currency;
+    const euroPrice = await getEuroPrice(assetCurrency);
+    return {
+      accountId: account.uuid,
+      name: account.name || `${assetCurrency} Wallet`,
+      assetAmount,
+      assetCurrency,
+      euroValue: euroPrice === null ? null : assetAmount * euroPrice,
+    };
+  }));
+  return { accounts, syncedAt: new Date().toISOString() };
 }
 
 function normalizeBankName(value) {
@@ -247,6 +351,17 @@ const server = createServer(async (request, response) => {
         200,
         await completeConnection(body.code, body.state)
       );
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/coinbase/health") {
+      return sendJson(response, 200, {
+        provider: "coinbase",
+        configured: Boolean(COINBASE_CREDENTIALS_PATH),
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/coinbase/sync") {
+      return sendJson(response, 200, await syncCoinbase());
     }
 
     return sendJson(response, 404, { error: "Route introuvable" });

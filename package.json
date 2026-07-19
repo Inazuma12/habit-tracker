@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server/dev.js",
-    "dev:web": "vite",
+    "dev:web": "vite --configLoader runner",
     "api": "node --env-file-if-exists=.env server/bank-api.js",
     "build": "vite build",
     "lint": "eslint .",
