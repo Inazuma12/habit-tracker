@@ -12,6 +12,7 @@ import {
   Plus,
   Settings,
   Flag,
+  Landmark,
   Clock,
   LayoutDashboard,
   ListChecks,
@@ -20,6 +21,7 @@ import {
   Sun,
   Trash2,
   Trophy,
+  WalletCards,
 } from "lucide-react";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -28,6 +30,7 @@ const MAIN_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "habits", label: "Habitudes", icon: ListChecks },
   { id: "sport", label: "Sport", icon: Dumbbell },
+  { id: "finance", label: "Finance", icon: WalletCards },
 ];
 
 const THEME_OPTIONS = [
@@ -541,6 +544,8 @@ export default function HabitTrackerApp() {
             setSportSessions={setSportSessions}
           />
         )}
+
+        {activeView === "finance" && <FinanceView />}
       </main>
 
       {globalSettingsOpen && (
@@ -568,6 +573,88 @@ export default function HabitTrackerApp() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function FinanceView() {
+  const placeholderBalance = 0;
+  const formattedBalance = new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+  }).format(placeholderBalance);
+
+  return (
+    <div className="w-full max-w-6xl mx-auto py-2">
+      <div className="mb-8 flex flex-col gap-2">
+        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#9de2ba]">
+          Patrimoine
+        </div>
+        <h1 className="text-5xl font-bold tracking-tight">Finance</h1>
+        <p className="text-gray-300 max-w-2xl">
+          Retrouve ici tes comptes et, bientôt, le détail de tes revenus et de
+          tes dépenses.
+        </p>
+      </div>
+
+      <section className="relative overflow-hidden bg-[#161d38] border border-[#232c52] rounded-[32px] p-7 shadow-2xl mb-6">
+        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[#315843] opacity-30 blur-3xl" />
+        <div className="relative flex flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex items-center gap-3 text-sm text-gray-300 mb-4">
+              <span className="w-10 h-10 rounded-2xl bg-[#232c52] border border-[#303b6e] flex items-center justify-center text-[#9de2ba]">
+                <WalletCards size={20} />
+              </span>
+              Capital total
+            </div>
+            <div className="text-5xl sm:text-6xl font-bold tracking-tight">
+              {formattedBalance}
+            </div>
+          </div>
+
+          <div className="w-fit rounded-full border border-[#303b6e] bg-[#101735] px-4 py-2 text-sm text-gray-300">
+            Valeur provisoire
+          </div>
+        </div>
+      </section>
+
+      <div className="mb-4 flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">Mes comptes</h2>
+          <p className="text-sm text-gray-300 mt-1">1 compte affiché</p>
+        </div>
+      </div>
+
+      <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+              <Landmark size={26} />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">Compte courant</h3>
+              <p className="text-sm text-gray-300 mt-1">La Banque Postale</p>
+            </div>
+          </div>
+
+          <div className="sm:text-right">
+            <div className="text-3xl font-bold">{formattedBalance}</div>
+            <div className="text-xs text-gray-400 mt-2">
+              Solde en attente de connexion
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 pt-5 border-t border-[#303b6e] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-sm text-gray-300">
+            <span className="w-2 h-2 rounded-full bg-[#ffd166]" />
+            Mise à jour automatique non configurée
+          </div>
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8c96c9]">
+            Données de démonstration
+          </span>
+        </div>
+      </section>
     </div>
   );
 }
