@@ -724,6 +724,18 @@ function replaceBankSources(sources, source, data) {
   return [...remainingSources, ...bankSources];
 }
 
+function readStoredFinanceSources() {
+  try {
+    const saved = localStorage.getItem("finance-sources");
+    if (!saved) return [];
+    return JSON.parse(saved).filter((source) => !(
+      source.category === "wallet" && (source.bankSessionId || source.bankAccountId)
+    ));
+  } catch {
+    return [];
+  }
+}
+
 function FinanceView() {
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [accountSetupOpen, setAccountSetupOpen] = useState(false);
@@ -737,17 +749,7 @@ function FinanceView() {
   const automaticAssetsSyncStarted = useRef(false);
   const syncBankSourceRef = useRef(null);
   const connectFinanceSourceRef = useRef(null);
-  const [financeSources, setFinanceSources] = useState(() => {
-    const saved = localStorage.getItem("finance-sources");
-    if (!saved) return [];
-    const sources = JSON.parse(saved);
-    // Une ancienne source wallet pouvait tomber par erreur dans le callback
-    // bancaire. Ces entrées hybrides sont invalides et peuvent être supprimées
-    // sans toucher aux véritables wallets ni aux véritables comptes bancaires.
-    return sources.filter((source) => !(
-      source.category === "wallet" && (source.bankSessionId || source.bankAccountId)
-    ));
-  });
+  const [financeSources, setFinanceSources] = useState(readStoredFinanceSources);
 
   useEffect(() => {
     localStorage.setItem("finance-sources", JSON.stringify(financeSources));
@@ -2189,6 +2191,16 @@ function DashboardView({
 }) {
   const habitOverview = getHabitOverview(habits, habitData);
   const sportOverview = getSportOverview(sportSessions);
+  const financeSources = readStoredFinanceSources();
+  const capitalTotal = financeSources.reduce((total, source) => {
+    const isCard = source.accountTypeCode === "CARD" || /^carte\b/i.test(source.accountName || "");
+    return total + (Number.isFinite(source.balance) && !isCard ? source.balance : 0);
+  }, 0);
+  const formattedCapital = new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 2,
+  }).format(capitalTotal);
 
   return (
     <div className="w-full max-w-6xl mx-auto py-2">
@@ -2200,11 +2212,11 @@ function DashboardView({
           Dashboard global
         </h1>
         <p className="text-gray-300 max-w-2xl">
-          Vue rapide de tes habitudes et de ton activite sport.
+          Vue rapide de tes habitudes, de ton activite sport et de ton patrimoine.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
         <DashboardStatCard
           icon={ListChecks}
           label="Habitudes"
@@ -2228,6 +2240,13 @@ function DashboardView({
           label="Seances muscu"
           value={sportOverview.sessionsCount}
           tone="blue"
+        />
+        <DashboardStatCard
+          icon={Wallet}
+          label="Capital total"
+          value={formattedCapital}
+          tone="green"
+          compact
         />
       </div>
 
@@ -2303,7 +2322,7 @@ function DashboardView({
   );
 }
 
-function DashboardStatCard({ icon: Icon, label, value, tone }) {
+function DashboardStatCard({ icon: Icon, label, value, tone, compact = false }) {
   const toneClasses = {
     green: "text-[#9de2ba] bg-[#203d33] border-[#315843]",
     red: "text-[#ffb0be] bg-[#3d252d] border-[#6a3140]",
@@ -2315,7 +2334,7 @@ function DashboardStatCard({ icon: Icon, label, value, tone }) {
       <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center mb-5 ${toneClasses[tone]}`}>
         <Icon size={22} />
       </div>
-      <div className="text-4xl font-bold">{value}</div>
+      <div className={`${compact ? "text-3xl" : "text-4xl"} font-bold break-words`}>{value}</div>
       <div className="text-sm text-gray-300 mt-1">{label}</div>
     </div>
   );
