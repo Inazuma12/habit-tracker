@@ -702,6 +702,28 @@ function replaceSolanaSources(sources, source, data) {
   return [...remainingSources, ...walletSources];
 }
 
+function replaceBankSources(sources, source, data) {
+  const existingGroup = sources.filter((item) => item.bankSessionId === data.sessionId);
+  const remainingSources = sources.filter((item) => item.bankSessionId !== data.sessionId);
+  const bankSources = data.accounts.map((account, index) => {
+    const existing = existingGroup.find((item) => item.bankAccountId === account.accountId) || source;
+    return {
+      ...existing,
+      id: existing.bankAccountId === account.accountId ? existing.id : `${source.id}-${account.accountId || index}`,
+      accountName: account.name || existing.accountName,
+      lastFour: account.iban?.slice(-4) || existing.lastFour,
+      balance: account.balance,
+      currency: account.currency,
+      accountTypeCode: account.accountTypeCode,
+      bankAccountId: account.accountId,
+      bankSessionId: data.sessionId,
+      connectionStatus: "connected",
+      lastSyncAt: data.syncedAt,
+    };
+  });
+  return [...remainingSources, ...bankSources];
+}
+
 function FinanceView() {
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [accountSetupOpen, setAccountSetupOpen] = useState(false);
@@ -712,13 +734,47 @@ function FinanceView() {
   const [connectingSourceId, setConnectingSourceId] = useState(null);
   const [bankError, setBankError] = useState("");
   const autoSyncStarted = useRef(false);
+  const automaticAssetsSyncStarted = useRef(false);
+  const connectFinanceSourceRef = useRef(null);
   const [financeSources, setFinanceSources] = useState(() => {
     const saved = localStorage.getItem("finance-sources");
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    const sources = JSON.parse(saved);
+    // Une ancienne source wallet pouvait tomber par erreur dans le callback
+    // bancaire. Ces entrées hybrides sont invalides et peuvent être supprimées
+    // sans toucher aux véritables wallets ni aux véritables comptes bancaires.
+    return sources.filter((source) => !(
+      source.category === "wallet" && (source.bankSessionId || source.bankAccountId)
+    ));
   });
 
   useEffect(() => {
     localStorage.setItem("finance-sources", JSON.stringify(financeSources));
+  }, [financeSources]);
+
+  useEffect(() => {
+    connectFinanceSourceRef.current = connectFinanceSource;
+  });
+
+  useEffect(() => {
+    if (automaticAssetsSyncStarted.current) return;
+    const staleAfter = 15 * 60 * 1000;
+    const isStale = (source) =>
+      Date.now() - new Date(source.lastSyncAt || 0).getTime() >= staleAfter;
+
+    const walletSources = new Map();
+    financeSources.forEach((source) => {
+      if (source.category === "wallet" && source.walletAddress && isStale(source)) {
+        const key = `${source.walletScannerId || source.networkId}-${source.walletAddress}`;
+        if (!walletSources.has(key)) walletSources.set(key, source);
+      }
+    });
+    if (!walletSources.size) return;
+
+    automaticAssetsSyncStarted.current = true;
+    void (async () => {
+      for (const source of walletSources.values()) await connectFinanceSourceRef.current(source);
+    })();
   }, [financeSources]);
 
   useEffect(() => {
@@ -776,6 +832,7 @@ function FinanceView() {
         setBankError("");
         setFinanceSources((sources) => {
           const replacedSource = sources.find((source) => source.id === data.sourceId);
+          if (!replacedSource || replacedSource.category !== "bank") return sources;
           const previousSessionId = replacedSource?.bankSessionId;
 
           return sources.flatMap((source) => {
@@ -976,17 +1033,26 @@ function FinanceView() {
     if (source.category === "exchange" && source.exchangeId === "coinbase") {
       return syncCoinbaseSource(source);
     }
-    if (source.category === "wallet" && source.walletScannerId === "aptos" && source.walletAddress) {
-      return syncAptosSource(source);
+    if (source.category === "wallet") {
+      if (!source.walletAddress) {
+        setBankError(`${source.name} : adresse publique manquante`);
+        return;
+      }
+      const scannerId = source.walletScannerId || (
+        source.networkId === "aptos" ? "aptos" :
+        source.networkId === "bitcoin" ? "bitcoin" :
+        source.networkId === "solana" ? "solana" : "evm"
+      );
+      if (scannerId === "aptos") return syncAptosSource(source);
+      if (scannerId === "bitcoin") return syncBitcoinSource(source);
+      if (scannerId === "solana") return syncSolanaSource(source);
+      if (scannerId === "evm") return syncEthereumSource(source);
+      setBankError(`${source.name} : réseau wallet non pris en charge`);
+      return;
     }
-    if (source.category === "wallet" && source.walletScannerId === "bitcoin" && source.walletAddress) {
-      return syncBitcoinSource(source);
-    }
-    if (source.category === "wallet" && source.walletScannerId === "solana" && source.walletAddress) {
-      return syncSolanaSource(source);
-    }
-    if (source.category === "wallet" && source.walletScannerId === "evm" && source.walletAddress) {
-      return syncEthereumSource(source);
+    if (source.category !== "bank") {
+      setBankError("Cette source ne peut pas être synchronisée");
+      return;
     }
 
     setConnectingSourceId(source.id);
@@ -1048,6 +1114,31 @@ function FinanceView() {
     });
     for (const source of sourcesByAddress.values()) {
       await connectFinanceSource(source);
+    }
+  }
+
+  async function syncBankSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/bank/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: source.bankSessionId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation bancaire impossible");
+      if (!data.accounts?.length) throw new Error("Aucun compte bancaire n’a été trouvé");
+      setFinanceSources((sources) => replaceBankSources(sources, source, data));
+    } catch (error) {
+      setBankError(`${source.name} : ${error.message}`);
+      setFinanceSources((sources) => sources.map((item) =>
+        item.bankSessionId === source.bankSessionId
+          ? { ...item, connectionStatus: "reconnect-required" }
+          : item
+      ));
+    } finally {
+      setConnectingSourceId(null);
     }
   }
 
@@ -1311,12 +1402,24 @@ function FinanceView() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => isWallet ? syncFinanceGroup(group) : connectFinanceSource(mainSource)}
+                    onClick={() => {
+                      if (isWallet) return syncFinanceGroup(group);
+                      if (mainSource.category === "bank" && mainSource.connectionStatus === "connected" && mainSource.bankSessionId) {
+                        return syncBankSource(mainSource);
+                      }
+                      return connectFinanceSource(mainSource);
+                    }}
                     disabled={isConnecting}
                     className="rounded-xl px-4 py-2 bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-60 disabled:cursor-wait transition font-semibold flex items-center gap-2"
                   >
                     <Link2 size={16} />
-                    {isConnecting ? "Synchronisation…" : (isExchange || isWallet) && isConnected ? "Synchroniser" : isConnected ? "Reconnecter" : "Connecter"}
+                    {isConnecting
+                      ? "Synchronisation…"
+                      : isConnected
+                        ? "Synchroniser"
+                        : mainSource.connectionStatus === "reconnect-required"
+                          ? "Reconnecter"
+                          : "Connecter"}
                   </button>
                 </div>
               </section>

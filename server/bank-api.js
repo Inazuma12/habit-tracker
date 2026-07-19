@@ -649,6 +649,25 @@ async function completeConnection(code, state) {
   };
 }
 
+async function syncBankSession(sessionId) {
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    throw new Error("Session bancaire invalide");
+  }
+  const session = await enableBankingRequest(
+    `/sessions/${encodeURIComponent(sessionId)}`
+  );
+  const accounts = await Promise.all(
+    (session.accounts || []).map(async (account) => {
+      const accountId = account.uid;
+      const balances = await enableBankingRequest(
+        `/accounts/${encodeURIComponent(accountId)}/balances`
+      );
+      return normalizeBalance(accountId, account, balances);
+    })
+  );
+  return { sessionId, accounts, syncedAt: new Date().toISOString() };
+}
+
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
@@ -686,6 +705,11 @@ const server = createServer(async (request, response) => {
         200,
         await completeConnection(body.code, body.state)
       );
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/bank/sync") {
+      const body = await readJson(request);
+      return sendJson(response, 200, await syncBankSession(body.sessionId || ""));
     }
 
     if (request.method === "GET" && url.pathname === "/api/coinbase/health") {
