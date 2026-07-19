@@ -215,6 +215,341 @@ async function syncCoinbase() {
   return { accounts, syncedAt: new Date().toISOString() };
 }
 
+const EVM_NETWORKS = [
+  { id: "ethereum", name: "Ethereum", symbol: "ETH", rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://eth.blockscout.com" },
+  { id: "base", name: "Base", symbol: "ETH", rpc: "https://base-rpc.publicnode.com", explorer: "https://base.blockscout.com" },
+  { id: "arbitrum", name: "Arbitrum", symbol: "ETH", rpc: "https://arbitrum-one-rpc.publicnode.com", explorer: "https://arbitrum.blockscout.com" },
+  { id: "optimism", name: "Optimism", symbol: "ETH", rpc: "https://optimism-rpc.publicnode.com", explorer: "https://optimism.blockscout.com" },
+  { id: "polygon", name: "Polygon", symbol: "POL", rpc: "https://polygon-bor-rpc.publicnode.com" },
+  { id: "bnb", name: "BNB Chain", symbol: "BNB", rpc: "https://bsc-rpc.publicnode.com" },
+  { id: "avalanche", name: "Avalanche C-Chain", symbol: "AVAX", rpc: "https://avalanche-c-chain-rpc.publicnode.com" },
+  { id: "sei", name: "Sei EVM", symbol: "SEI", rpc: "https://sei-evm-rpc.publicnode.com" },
+];
+
+const CURATED_EVM_TOKENS = {
+  ethereum: [
+    { symbol: "PYR", name: "PYR", contract: "0x430EF9263E76DAE63c84292C3409D61c598E9682" },
+  ],
+  polygon: [
+    { symbol: "PYR", name: "PYR", contract: "0x430EF9263E76DAE63c84292C3409D61c598E9682" },
+  ],
+};
+
+async function evmRpc(rpcUrl, method, params) {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method,
+      params,
+      id: 1,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error || typeof data.result !== "string") {
+    throw new Error(data.error?.message || "Lecture du solde EVM impossible");
+  }
+  return data.result;
+}
+
+async function getErc20Balances(network, address, usdToEur) {
+  if (!network.explorer) return [];
+  try {
+    const response = await fetch(
+      `${network.explorer}/api/v2/addresses/${encodeURIComponent(address)}/token-balances`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12_000) }
+    );
+    if (!response.ok) return [];
+    const balances = await response.json();
+    return balances
+      .filter((item) => item.token?.type === "ERC-20" && Number(item.value) > 0)
+      .map((item) => {
+        const decimals = Number(item.token.decimals || 0);
+        const assetAmount = Number(item.value) / 10 ** decimals;
+        const usdPrice = Number(item.token.exchange_rate);
+        return {
+          accountId: `${network.id}-${item.token.address_hash}`,
+          name: `${item.token.symbol || item.token.name} · ${network.name}`,
+          networkId: network.id,
+          networkName: network.name,
+          assetAmount,
+          assetCurrency: item.token.symbol || item.token.name,
+          euroValue: Number.isFinite(usdPrice) && usdPrice > 0 && usdToEur !== null
+            ? assetAmount * usdPrice * usdToEur
+            : null,
+          tokenAddress: item.token.address_hash,
+        };
+      })
+      .filter((account) => account.euroValue !== null && account.euroValue > 0.005)
+      .sort((a, b) => b.euroValue - a.euroValue)
+      .slice(0, 50);
+  } catch {
+    return [];
+  }
+}
+
+async function getCuratedTokenBalances(network, address) {
+  const tokens = CURATED_EVM_TOKENS[network.id] || [];
+  const encodedAddress = address.slice(2).toLowerCase().padStart(64, "0");
+  const balances = await Promise.all(tokens.map(async (token) => {
+    try {
+      const [balanceHex, decimalsHex, euroPrice] = await Promise.all([
+        evmRpc(network.rpc, "eth_call", [{
+          to: token.contract,
+          data: `0x70a08231${encodedAddress}`,
+        }, "latest"]),
+        evmRpc(network.rpc, "eth_call", [{
+          to: token.contract,
+          data: "0x313ce567",
+        }, "latest"]),
+        getEuroPrice(token.symbol),
+      ]);
+      const decimals = Number(BigInt(decimalsHex));
+      const assetAmount = Number(BigInt(balanceHex)) / 10 ** decimals;
+      if (!Number.isFinite(assetAmount) || assetAmount <= 0) return null;
+      return {
+        accountId: `${network.id}-${token.contract.toLowerCase()}`,
+        name: `${token.name} · ${network.name}`,
+        networkId: network.id,
+        networkName: network.name,
+        assetAmount,
+        assetCurrency: token.symbol,
+        euroValue: euroPrice === null ? null : assetAmount * euroPrice,
+        tokenAddress: token.contract,
+      };
+    } catch {
+      return null;
+    }
+  }));
+  return balances.filter(Boolean);
+}
+
+async function scanEvmNetwork(network, address, usdToEur) {
+  const [nativeBalanceHex, nativeEuroPrice, discoveredTokens, curatedTokens] = await Promise.all([
+    evmRpc(network.rpc, "eth_getBalance", [address, "latest"]),
+    getEuroPrice(network.symbol),
+    getErc20Balances(network, address, usdToEur),
+    getCuratedTokenBalances(network, address),
+  ]);
+  const tokensByAddress = new Map();
+  [...discoveredTokens, ...curatedTokens].forEach((token) => {
+    tokensByAddress.set(token.tokenAddress.toLowerCase(), token);
+  });
+  const tokens = Array.from(tokensByAddress.values());
+  const nativeAmount = Number(BigInt(nativeBalanceHex)) / 1e18;
+  const nativeAccount = {
+    accountId: `${network.id}-native`,
+    name: `${network.symbol} · ${network.name}`,
+    networkId: network.id,
+    networkName: network.name,
+    assetAmount: nativeAmount,
+    assetCurrency: network.symbol,
+    euroValue: nativeEuroPrice === null ? null : nativeAmount * nativeEuroPrice,
+  };
+  return nativeAmount > 0 ? [nativeAccount, ...tokens] : tokens;
+}
+
+async function syncEthereum(address) {
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    throw new Error("Adresse Ethereum invalide");
+  }
+  const usdToEur = await getEuroPrice("USD");
+  const results = await Promise.allSettled(
+    EVM_NETWORKS.map((network) => scanEvmNetwork(network, address, usdToEur))
+  );
+  const accounts = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  return {
+    accounts,
+    networksScanned: EVM_NETWORKS.length,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+async function syncAptos(address) {
+  if (!/^0x[a-fA-F0-9]{1,64}$/.test(address)) {
+    throw new Error("Adresse Aptos invalide");
+  }
+  const response = await fetch("https://api.mainnet.aptoslabs.com/v1/view", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      function: "0x1::coin::balance",
+      type_arguments: ["0x1::aptos_coin::AptosCoin"],
+      arguments: [address],
+    }),
+    signal: AbortSignal.timeout(12_000),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !Array.isArray(data) || data.length === 0) {
+    throw new Error(data?.message || "Lecture du solde Aptos impossible");
+  }
+  const assetAmount = Number(BigInt(data[0])) / 1e8;
+  const euroPrice = await getEuroPrice("APT");
+  return {
+    accounts: [{
+      accountId: `aptos-${address.toLowerCase()}`,
+      name: "APT · Aptos",
+      networkId: "aptos",
+      networkName: "Aptos",
+      assetAmount,
+      assetCurrency: "APT",
+      euroValue: euroPrice === null ? null : assetAmount * euroPrice,
+    }],
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+async function syncBitcoin(address) {
+  const isLegacyAddress = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address);
+  const isBech32Address = /^(bc1)[ac-hj-np-z02-9]{11,71}$/i.test(address);
+  if (!isLegacyAddress && !isBech32Address) {
+    throw new Error("Adresse Bitcoin invalide");
+  }
+  const response = await fetch(
+    `https://blockstream.info/api/address/${encodeURIComponent(address)}`,
+    { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12_000) }
+  );
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.chain_stats) {
+    throw new Error(data?.message || "Lecture du solde Bitcoin impossible");
+  }
+  const confirmedSats = data.chain_stats.funded_txo_sum - data.chain_stats.spent_txo_sum;
+  const pendingSats = (data.mempool_stats?.funded_txo_sum || 0) - (data.mempool_stats?.spent_txo_sum || 0);
+  const assetAmount = (confirmedSats + pendingSats) / 1e8;
+  const euroPrice = await getEuroPrice("BTC");
+  return {
+    accounts: [{
+      accountId: `bitcoin-${address.toLowerCase()}`,
+      name: "BTC · Bitcoin",
+      networkId: "bitcoin",
+      networkName: "Bitcoin",
+      assetAmount,
+      assetCurrency: "BTC",
+      euroValue: euroPrice === null ? null : assetAmount * euroPrice,
+    }],
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+const SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com";
+const SOLANA_TOKEN_PROGRAMS = [
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+];
+
+async function solanaRpc(method, params) {
+  const response = await fetch(SOLANA_RPC_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error || data.result === undefined) {
+    throw new Error(data.error?.message || "Lecture du wallet Solana impossible");
+  }
+  return data.result;
+}
+
+async function getSolanaTokenMarkets(mints) {
+  const markets = new Map();
+  for (let index = 0; index < mints.length; index += 30) {
+    const batch = mints.slice(index, index + 30);
+    try {
+      const response = await fetch(
+        `https://api.dexscreener.com/tokens/v1/solana/${batch.map(encodeURIComponent).join(",")}`,
+        { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12_000) }
+      );
+      if (!response.ok) continue;
+      const pairs = await response.json();
+      pairs.forEach((pair) => {
+        [pair.baseToken, pair.quoteToken].forEach((token) => {
+          if (!token || !batch.includes(token.address)) return;
+          const priceUsd = Number(pair.priceUsd);
+          const liquidity = Number(pair.liquidity?.usd || 0);
+          const current = markets.get(token.address);
+          if (!current || liquidity > current.liquidity) {
+            markets.set(token.address, {
+              name: token.name,
+              symbol: token.symbol,
+              priceUsd: Number.isFinite(priceUsd) ? priceUsd : null,
+              liquidity,
+            });
+          }
+        });
+      });
+    } catch {
+      // Le solde reste visible même si les métadonnées de marché sont indisponibles.
+    }
+  }
+  return markets;
+}
+
+async function syncSolana(address) {
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) {
+    throw new Error("Adresse Solana invalide");
+  }
+  const [balanceResult, ...tokenResults] = await Promise.all([
+    solanaRpc("getBalance", [address, { commitment: "confirmed" }]),
+    ...SOLANA_TOKEN_PROGRAMS.map((programId) =>
+      solanaRpc("getTokenAccountsByOwner", [
+        address,
+        { programId },
+        { commitment: "confirmed", encoding: "jsonParsed" },
+      ]).catch(() => ({ value: [] }))
+    ),
+  ]);
+  const tokenBalances = new Map();
+  tokenResults.flatMap((result) => result.value || []).forEach((item) => {
+    const info = item.account?.data?.parsed?.info;
+    const amount = Number(info?.tokenAmount?.uiAmountString || 0);
+    if (!info?.mint || !Number.isFinite(amount) || amount <= 0) return;
+    tokenBalances.set(info.mint, (tokenBalances.get(info.mint) || 0) + amount);
+  });
+  const [solEuroPrice, usdToEur, markets] = await Promise.all([
+    getEuroPrice("SOL"),
+    getEuroPrice("USD"),
+    getSolanaTokenMarkets(Array.from(tokenBalances.keys())),
+  ]);
+  const solAmount = Number(balanceResult.value || 0) / 1e9;
+  const accounts = [];
+  if (solAmount > 0) {
+    accounts.push({
+      accountId: "solana-native",
+      name: "SOL · Solana",
+      networkId: "solana",
+      networkName: "Solana",
+      assetAmount: solAmount,
+      assetCurrency: "SOL",
+      euroValue: solEuroPrice === null ? null : solAmount * solEuroPrice,
+    });
+  }
+  tokenBalances.forEach((assetAmount, mint) => {
+    const market = markets.get(mint);
+    const priceUsd = Number(market?.priceUsd);
+    const euroValue = Number.isFinite(priceUsd) && priceUsd > 0 && usdToEur !== null
+      ? assetAmount * priceUsd * usdToEur
+      : null;
+    // Les wallets Solana reçoivent souvent des jetons spam ou abandonnés.
+    // Sans marché actif/prix fiable, ils ne doivent pas polluer le patrimoine.
+    if (euroValue === null || euroValue <= 0.005) return;
+    const symbol = market?.symbol || `${mint.slice(0, 4)}…${mint.slice(-4)}`;
+    accounts.push({
+      accountId: `solana-${mint}`,
+      name: `${market?.name || symbol} · Solana`,
+      networkId: "solana",
+      networkName: "Solana",
+      assetAmount,
+      assetCurrency: symbol,
+      euroValue,
+      tokenAddress: mint,
+    });
+  });
+  accounts.sort((a, b) => (b.euroValue || 0) - (a.euroValue || 0));
+  return { accounts, syncedAt: new Date().toISOString() };
+}
+
 function normalizeBankName(value) {
   return value
     .normalize("NFD")
@@ -362,6 +697,26 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/coinbase/sync") {
       return sendJson(response, 200, await syncCoinbase());
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/wallet/ethereum/sync") {
+      const body = await readJson(request);
+      return sendJson(response, 200, await syncEthereum(body.address || ""));
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/wallet/aptos/sync") {
+      const body = await readJson(request);
+      return sendJson(response, 200, await syncAptos(body.address || ""));
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/wallet/bitcoin/sync") {
+      const body = await readJson(request);
+      return sendJson(response, 200, await syncBitcoin(body.address || ""));
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/wallet/solana/sync") {
+      const body = await readJson(request);
+      return sendJson(response, 200, await syncSolana(body.address || ""));
     }
 
     return sendJson(response, 404, { error: "Route introuvable" });

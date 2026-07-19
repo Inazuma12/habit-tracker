@@ -602,9 +602,112 @@ function replaceCoinbaseSources(sources, source, data) {
   return [...remainingSources, ...coinbaseSources];
 }
 
+function replaceEthereumSources(sources, source, data) {
+  const previousGroupId = source.walletSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.walletSessionId !== previousGroupId)
+  );
+  const walletSessionId = `ethereum-${source.walletAddress.toLowerCase()}`;
+  const addressLabel = `${source.walletAddress.slice(0, 6)}…${source.walletAddress.slice(-4)}`;
+  const walletSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: `${account.name} · ${addressLabel}`,
+    walletAccountId: account.accountId,
+    walletSessionId,
+    assetNetworkId: account.networkId,
+    assetNetworkName: account.networkName,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...walletSources];
+}
+
+function replaceAptosSources(sources, source, data) {
+  const previousGroupId = source.walletSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.walletSessionId !== previousGroupId)
+  );
+  const walletSessionId = `aptos-${source.walletAddress.toLowerCase()}`;
+  const addressLabel = `${source.walletAddress.slice(0, 6)}…${source.walletAddress.slice(-4)}`;
+  const walletSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: `${account.name} · ${addressLabel}`,
+    walletAccountId: account.accountId,
+    walletSessionId,
+    assetNetworkId: account.networkId,
+    assetNetworkName: account.networkName,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...walletSources];
+}
+
+function replaceBitcoinSources(sources, source, data) {
+  const previousGroupId = source.walletSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.walletSessionId !== previousGroupId)
+  );
+  const walletSessionId = `bitcoin-${source.walletAddress.toLowerCase()}`;
+  const addressLabel = `${source.walletAddress.slice(0, 6)}…${source.walletAddress.slice(-4)}`;
+  const walletSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: `${account.name} · ${addressLabel}`,
+    walletAccountId: account.accountId,
+    walletSessionId,
+    assetNetworkId: account.networkId,
+    assetNetworkName: account.networkName,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...walletSources];
+}
+
+function replaceSolanaSources(sources, source, data) {
+  const previousGroupId = source.walletSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.walletSessionId !== previousGroupId)
+  );
+  const walletSessionId = `solana-${source.walletAddress}`;
+  const addressLabel = `${source.walletAddress.slice(0, 6)}…${source.walletAddress.slice(-4)}`;
+  const walletSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: `${account.name} · ${addressLabel}`,
+    walletAccountId: account.accountId,
+    walletSessionId,
+    assetNetworkId: account.networkId,
+    assetNetworkName: account.networkName,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...walletSources];
+}
+
 function FinanceView() {
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [accountSetupOpen, setAccountSetupOpen] = useState(false);
+  const [walletSetupOpen, setWalletSetupOpen] = useState(false);
+  const [phantomSetupOpen, setPhantomSetupOpen] = useState(false);
+  const [metamaskSetupOpen, setMetamaskSetupOpen] = useState(false);
   const [selectedBank, setSelectedBank] = useState(null);
   const [connectingSourceId, setConnectingSourceId] = useState(null);
   const [bankError, setBankError] = useState("");
@@ -712,7 +815,10 @@ function FinanceView() {
   const financeGroups = (() => {
     const groups = new Map();
     financeSources.forEach((source) => {
-      const groupId = source.bankSessionId || source.exchangeSessionId || source.id;
+      const walletGroupId = source.category === "wallet"
+        ? source.walletId || "wallet"
+        : null;
+      const groupId = source.bankSessionId || source.exchangeSessionId || walletGroupId || source.id;
       if (!groups.has(groupId)) groups.set(groupId, { id: groupId, name: source.name, sources: [] });
       groups.get(groupId).sources.push(source);
     });
@@ -763,6 +869,102 @@ function FinanceView() {
     setSourceModalOpen(false);
   }
 
+  function openWalletSetup() {
+    setSourceModalOpen(false);
+    setWalletSetupOpen(true);
+  }
+
+  function saveEthereumWallet(address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `trust-wallet-ethereum-${Date.now()}`,
+      category: "wallet",
+      walletId: "trust-wallet",
+      networkId: "ethereum",
+      walletScannerId: "evm",
+      name: "Trust Wallet",
+      accountName: "Ethereum",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setWalletSetupOpen(false);
+  }
+
+  function saveAptosWallet(address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `trust-wallet-aptos-${Date.now()}`,
+      category: "wallet",
+      walletId: "trust-wallet",
+      networkId: "aptos",
+      walletScannerId: "aptos",
+      name: "Trust Wallet",
+      accountName: "Aptos",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setWalletSetupOpen(false);
+  }
+
+  function saveBitcoinWallet(address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `trust-wallet-bitcoin-${Date.now()}`,
+      category: "wallet",
+      walletId: "trust-wallet",
+      networkId: "bitcoin",
+      walletScannerId: "bitcoin",
+      name: "Trust Wallet",
+      accountName: "Bitcoin",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setWalletSetupOpen(false);
+  }
+
+  function saveTrustWallet(network, address) {
+    if (network === "aptos") saveAptosWallet(address);
+    else if (network === "bitcoin") saveBitcoinWallet(address);
+    else saveEthereumWallet(address);
+  }
+
+  function openPhantomSetup() {
+    setSourceModalOpen(false);
+    setPhantomSetupOpen(true);
+  }
+
+  function savePhantomWallet(network, address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `phantom-${network}-${Date.now()}`,
+      category: "wallet",
+      walletId: "phantom",
+      networkId: network === "solana" ? "solana" : "ethereum",
+      walletScannerId: network,
+      name: "Phantom",
+      accountName: network === "solana" ? "Solana" : "Réseaux EVM",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setPhantomSetupOpen(false);
+  }
+
+  function openMetamaskSetup() {
+    setSourceModalOpen(false);
+    setMetamaskSetupOpen(true);
+  }
+
+  function saveMetamaskWallet(network, address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `metamask-${network}-${Date.now()}`,
+      category: "wallet",
+      walletId: "metamask",
+      networkId: network === "evm" ? "ethereum" : network,
+      walletScannerId: network,
+      name: "MetaMask",
+      accountName: network === "evm" ? "Réseaux EVM" : network === "solana" ? "Solana" : "Bitcoin",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setMetamaskSetupOpen(false);
+  }
+
   function removeFinanceGroup(group) {
     const sourceIds = new Set(group.sources.map((source) => source.id));
     setFinanceSources((sources) =>
@@ -773,6 +975,18 @@ function FinanceView() {
   async function connectFinanceSource(source) {
     if (source.category === "exchange" && source.exchangeId === "coinbase") {
       return syncCoinbaseSource(source);
+    }
+    if (source.category === "wallet" && source.walletScannerId === "aptos" && source.walletAddress) {
+      return syncAptosSource(source);
+    }
+    if (source.category === "wallet" && source.walletScannerId === "bitcoin" && source.walletAddress) {
+      return syncBitcoinSource(source);
+    }
+    if (source.category === "wallet" && source.walletScannerId === "solana" && source.walletAddress) {
+      return syncSolanaSource(source);
+    }
+    if (source.category === "wallet" && source.walletScannerId === "evm" && source.walletAddress) {
+      return syncEthereumSource(source);
     }
 
     setConnectingSourceId(source.id);
@@ -822,6 +1036,21 @@ function FinanceView() {
     }
   }
 
+  async function syncFinanceGroup(group) {
+    if (group.sources[0]?.category !== "wallet") {
+      return connectFinanceSource(group.sources[0]);
+    }
+    const sourcesByAddress = new Map();
+    group.sources.forEach((source) => {
+      const key = `${source.walletScannerId || source.networkId}-${source.walletAddress}`;
+      const current = sourcesByAddress.get(key);
+      if (!current || source.connectionStatus !== "connected") sourcesByAddress.set(key, source);
+    });
+    for (const source of sourcesByAddress.values()) {
+      await connectFinanceSource(source);
+    }
+  }
+
   async function syncCoinbaseSource(source) {
     setConnectingSourceId(source.id);
     setBankError("");
@@ -832,6 +1061,84 @@ function FinanceView() {
       if (!data.accounts?.length) throw new Error("Aucun actif avec un solde disponible n’a été trouvé sur Coinbase");
 
       setFinanceSources((sources) => replaceCoinbaseSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncEthereumSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/wallet/ethereum/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: source.walletAddress }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Ethereum impossible");
+      if (!data.accounts?.length) throw new Error("Aucun actif Ethereum n’a été trouvé");
+      setFinanceSources((sources) => replaceEthereumSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncAptosSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/wallet/aptos/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: source.walletAddress }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Aptos impossible");
+      setFinanceSources((sources) => replaceAptosSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncBitcoinSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/wallet/bitcoin/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: source.walletAddress }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Bitcoin impossible");
+      setFinanceSources((sources) => replaceBitcoinSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncSolanaSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/wallet/solana/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: source.walletAddress }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Solana impossible");
+      if (!data.accounts?.length) throw new Error("Aucun actif Solana n’a été trouvé");
+      setFinanceSources((sources) => replaceSolanaSources(sources, source, data));
     } catch (error) {
       setBankError(error.message);
     } finally {
@@ -920,6 +1227,7 @@ function FinanceView() {
             {financeGroups.map((group) => {
               const mainSource = group.sources.find((source) => !isCardSource(source)) || group.sources[0];
               const isExchange = mainSource.category === "exchange";
+              const isWallet = mainSource.category === "wallet";
               const isConnected = group.sources.some((source) => source.connectionStatus === "connected");
               const isConnecting = group.sources.some((source) => source.id === connectingSourceId);
               const groupBalance = group.sources.reduce(
@@ -935,12 +1243,12 @@ function FinanceView() {
                 <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-14 h-14 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
-                      {isExchange ? <Bitcoin size={26} /> : <Landmark size={26} />}
+                      {isExchange ? <Bitcoin size={26} /> : isWallet ? <Wallet size={26} /> : <Landmark size={26} />}
                     </div>
                     <div>
                       <h3 className="text-xl font-semibold">{group.name}</h3>
                       <p className="text-sm text-gray-300 mt-1">
-                        {group.sources.length} élément{group.sources.length > 1 ? "s" : ""} bancaire{group.sources.length > 1 ? "s" : ""}
+                        {group.sources.length} {isExchange || isWallet ? "actif" : "élément bancaire"}{group.sources.length > 1 ? "s" : ""}
                       </p>
                     </div>
                   </div>
@@ -952,7 +1260,7 @@ function FinanceView() {
                           : "Solde indisponible"}
                       </div>
                       <div className="text-xs text-gray-400 mt-2">
-                        {isConnected ? "Comptes connectés en lecture seule" : "Connexion bancaire requise"}
+                        {isConnected ? "Source connectée en lecture seule" : "Connexion requise"}
                       </div>
                     </div>
                     <button
@@ -972,12 +1280,12 @@ function FinanceView() {
                       <div key={source.id} className={`flex flex-col gap-3 bg-[#101735] px-4 py-4 sm:flex-row sm:items-center sm:justify-between ${sourceIndex > 0 ? "border-t border-[#232c52]" : ""}`}>
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="w-9 h-9 shrink-0 rounded-xl bg-[#202948] flex items-center justify-center text-[#b7c7ff]">
-                            {isExchange ? <Bitcoin size={18} /> : isCard ? <WalletCards size={18} /> : <Landmark size={18} />}
+                            {isExchange ? <Bitcoin size={18} /> : isWallet ? <Wallet size={18} /> : isCard ? <WalletCards size={18} /> : <Landmark size={18} />}
                           </span>
                           <div className="min-w-0">
                             <div className="font-semibold truncate">{source.accountName}</div>
                             <div className="text-xs text-gray-400 mt-1">
-                              {isExchange
+                              {isExchange || isWallet
                                 ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 8 }).format(source.assetAmount || 0)} ${source.assetCurrency || ""}`
                                 : isCard ? "Carte associée" : "Compte bancaire"}
                               {!isExchange && source.lastFour ? ` · •••• ${source.lastFour}` : ""}
@@ -1003,12 +1311,12 @@ function FinanceView() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => connectFinanceSource(mainSource)}
+                    onClick={() => isWallet ? syncFinanceGroup(group) : connectFinanceSource(mainSource)}
                     disabled={isConnecting}
                     className="rounded-xl px-4 py-2 bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-60 disabled:cursor-wait transition font-semibold flex items-center gap-2"
                   >
                     <Link2 size={16} />
-                    {isConnecting ? "Synchronisation…" : isExchange && isConnected ? "Synchroniser" : isConnected ? "Reconnecter" : "Connecter"}
+                    {isConnecting ? "Synchronisation…" : (isExchange || isWallet) && isConnected ? "Synchroniser" : isConnected ? "Reconnecter" : "Connecter"}
                   </button>
                 </div>
               </section>
@@ -1022,6 +1330,9 @@ function FinanceView() {
         <AddFinanceSourceModal
           onSelectBank={openBankSetup}
           onSelectCoinbase={addCoinbaseSource}
+          onSelectWallet={openWalletSetup}
+          onSelectPhantom={openPhantomSetup}
+          onSelectMetamask={openMetamaskSetup}
           onClose={() => setSourceModalOpen(false)}
         />
       )}
@@ -1033,15 +1344,34 @@ function FinanceView() {
           onClose={() => setAccountSetupOpen(false)}
         />
       )}
+
+      {walletSetupOpen && (
+        <TrustWalletSetupModal
+          onSave={saveTrustWallet}
+          onClose={() => setWalletSetupOpen(false)}
+        />
+      )}
+      {phantomSetupOpen && (
+        <PhantomWalletSetupModal
+          onSave={savePhantomWallet}
+          onClose={() => setPhantomSetupOpen(false)}
+        />
+      )}
+      {metamaskSetupOpen && (
+        <MetamaskWalletSetupModal
+          onSave={saveMetamaskWallet}
+          onClose={() => setMetamaskSetupOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
-function AddFinanceSourceModal({ onSelectBank, onSelectCoinbase, onClose }) {
+function AddFinanceSourceModal({ onSelectBank, onSelectCoinbase, onSelectWallet, onSelectPhantom, onSelectMetamask, onClose }) {
   const categories = [
     { id: "bank", label: "Banque", icon: Landmark, available: true },
     { id: "exchange", label: "Exchange crypto", icon: Bitcoin, available: true },
-    { id: "wallet", label: "Wallet", icon: Wallet, available: false },
+    { id: "wallet", label: "Wallet", icon: Wallet, available: true },
   ];
   const banks = [
     { id: "la-banque-postale", name: "La Banque Postale" },
@@ -1050,7 +1380,7 @@ function AddFinanceSourceModal({ onSelectBank, onSelectCoinbase, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-      <div className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+      <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div>
             <div className="text-2xl font-bold">Ajouter une source</div>
@@ -1089,6 +1419,45 @@ function AddFinanceSourceModal({ onSelectBank, onSelectCoinbase, onClose }) {
           </span>
           <ChevronRight size={20} />
         </button>
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400 mb-3">Wallets disponibles</div>
+        <button
+          type="button"
+          onClick={onSelectWallet}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left mb-7"
+        >
+          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+            <Wallet size={23} />
+          </span>
+          <span className="flex-1">
+            <span className="block font-semibold">Trust Wallet</span>
+            <span className="block text-sm text-gray-300 mt-1">Ajoute une ou plusieurs adresses publiques</span>
+          </span>
+          <ChevronRight size={20} />
+        </button>
+        <button
+          type="button"
+          onClick={onSelectPhantom}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left mb-7"
+        >
+          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]"><Wallet size={23} /></span>
+          <span className="flex-1">
+            <span className="block font-semibold">Phantom</span>
+            <span className="block text-sm text-gray-300 mt-1">Solana et réseaux EVM en lecture seule</span>
+          </span>
+          <ChevronRight size={20} />
+        </button>
+        <button
+          type="button"
+          onClick={onSelectMetamask}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left mb-7"
+        >
+          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]"><Wallet size={23} /></span>
+          <span className="flex-1">
+            <span className="block font-semibold">MetaMask</span>
+            <span className="block text-sm text-gray-300 mt-1">Ethereum, BNB Chain, Sei et autres réseaux EVM</span>
+          </span>
+          <ChevronRight size={20} />
+        </button>
 
         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400 mb-3">Banques disponibles</div>
         <div className="space-y-3">
@@ -1111,6 +1480,153 @@ function AddFinanceSourceModal({ onSelectBank, onSelectCoinbase, onClose }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function TrustWalletSetupModal({ onSave, onClose }) {
+  const [network, setNetwork] = useState("evm");
+  const [address, setAddress] = useState("");
+  const normalizedAddress = address.trim();
+  const isValid = network === "aptos"
+    ? /^0x[a-fA-F0-9]{1,64}$/.test(normalizedAddress)
+    : network === "bitcoin"
+      ? /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71})$/i.test(normalizedAddress)
+      : /^0x[a-fA-F0-9]{40}$/.test(normalizedAddress);
+
+  function submitWallet(event) {
+    event.preventDefault();
+    if (isValid) onSave(network, normalizedAddress);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <form onSubmit={submitWallet} className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2">
+              <Wallet size={17} /> Trust Wallet
+            </div>
+            <div className="text-2xl font-bold">Ajouter une adresse</div>
+            <div className="text-sm text-gray-300 mt-1">Tu peux revenir ici autant de fois que nécessaire pour ajouter tes différentes adresses Trust Wallet.</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          <button type="button" onClick={() => { setNetwork("evm"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "evm" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Réseaux EVM</button>
+          <button type="button" onClick={() => { setNetwork("aptos"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "aptos" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Aptos</button>
+          <button type="button" onClick={() => { setNetwork("bitcoin"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "bitcoin" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Bitcoin</button>
+        </div>
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="trust-wallet-address">Adresse publique {network === "aptos" ? "Aptos" : network === "bitcoin" ? "Bitcoin" : "EVM"}</label>
+        <input
+          id="trust-wallet-address"
+          value={address}
+          onChange={(event) => setAddress(event.target.value)}
+          className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white"
+          placeholder="0x…"
+          spellCheck="false"
+          autoComplete="off"
+        />
+        {normalizedAddress && !isValid && <div className="text-sm text-[#ffb0be] mt-2">Cette adresse {network === "aptos" ? "Aptos" : network === "bitcoin" ? "Bitcoin" : "EVM"} n’est pas valide.</div>}
+
+        <div className="mt-5 rounded-2xl bg-[#101735] border border-[#303b6e] p-4 text-sm text-gray-300 flex gap-3">
+          <Link2 size={19} className="shrink-0 text-[#9de2ba]" />
+          <p>Ne renseigne jamais ta phrase secrète ni ta clé privée. Une adresse publique permet seulement de consulter les fonds visibles sur la blockchain.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <button type="button" onClick={onClose} className="bg-[#232c52] hover:bg-[#303b6e] transition rounded-2xl py-3 font-medium">Retour</button>
+          <button type="submit" disabled={!isValid} className="bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-50 disabled:cursor-not-allowed transition rounded-2xl py-3 font-semibold">Ajouter</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PhantomWalletSetupModal({ onSave, onClose }) {
+  const [network, setNetwork] = useState("solana");
+  const [address, setAddress] = useState("");
+  const normalizedAddress = address.trim();
+  const isValid = network === "solana"
+    ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(normalizedAddress)
+    : /^0x[a-fA-F0-9]{40}$/.test(normalizedAddress);
+
+  function submitWallet(event) {
+    event.preventDefault();
+    if (isValid) onSave(network, normalizedAddress);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <form onSubmit={submitWallet} className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2"><Wallet size={17} /> Phantom</div>
+            <div className="text-2xl font-bold">Ajouter une adresse Phantom</div>
+            <div className="text-sm text-gray-300 mt-1">L’adresse Solana détecte automatiquement SOL et tes jetons SPL.</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer"><X size={18} /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          <button type="button" onClick={() => { setNetwork("solana"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "solana" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Solana</button>
+          <button type="button" onClick={() => { setNetwork("evm"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "evm" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Réseaux EVM</button>
+        </div>
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="phantom-wallet-address">Adresse publique {network === "solana" ? "Solana" : "EVM"}</label>
+        <input id="phantom-wallet-address" value={address} onChange={(event) => setAddress(event.target.value)} className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white" placeholder={network === "solana" ? "Adresse Solana…" : "0x…"} spellCheck="false" autoComplete="off" />
+        {normalizedAddress && !isValid && <div className="text-sm text-[#ffb0be] mt-2">Cette adresse {network === "solana" ? "Solana" : "EVM"} n’est pas valide.</div>}
+        <div className="mt-5 rounded-2xl bg-[#101735] border border-[#303b6e] p-4 text-sm text-gray-300 flex gap-3"><Link2 size={19} className="shrink-0 text-[#9de2ba]" /><p>Utilise uniquement ton adresse publique. Ne communique jamais ta phrase secrète ni ta clé privée.</p></div>
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <button type="button" onClick={onClose} className="bg-[#232c52] hover:bg-[#303b6e] transition rounded-2xl py-3 font-medium">Retour</button>
+          <button type="submit" disabled={!isValid} className="bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-50 disabled:cursor-not-allowed transition rounded-2xl py-3 font-semibold">Ajouter</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function MetamaskWalletSetupModal({ onSave, onClose }) {
+  const [network, setNetwork] = useState("evm");
+  const [address, setAddress] = useState("");
+  const normalizedAddress = address.trim();
+  const isValid = network === "solana"
+    ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(normalizedAddress)
+    : network === "bitcoin"
+      ? /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71})$/i.test(normalizedAddress)
+      : /^0x[a-fA-F0-9]{40}$/.test(normalizedAddress);
+
+  function submitWallet(event) {
+    event.preventDefault();
+    if (isValid) onSave(network, normalizedAddress);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <form onSubmit={submitWallet} className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2"><Wallet size={17} /> MetaMask</div>
+            <div className="text-2xl font-bold">Ajouter MetaMask</div>
+            <div className="text-sm text-gray-300 mt-1">Ajoute séparément tes adresses EVM, Solana ou Bitcoin. Elles resteront réunies dans une seule carte MetaMask.</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer"><X size={18} /></button>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          <button type="button" onClick={() => { setNetwork("evm"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "evm" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Réseaux EVM</button>
+          <button type="button" onClick={() => { setNetwork("solana"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "solana" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Solana</button>
+          <button type="button" onClick={() => { setNetwork("bitcoin"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "bitcoin" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Bitcoin</button>
+        </div>
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="metamask-wallet-address">Adresse publique {network === "evm" ? "EVM" : network === "solana" ? "Solana" : "Bitcoin"}</label>
+        <input id="metamask-wallet-address" value={address} onChange={(event) => setAddress(event.target.value)} className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white" placeholder={network === "evm" ? "0x…" : network === "solana" ? "Adresse Solana…" : "bc1…"} spellCheck="false" autoComplete="off" />
+        {normalizedAddress && !isValid && <div className="text-sm text-[#ffb0be] mt-2">Cette adresse {network === "evm" ? "EVM" : network === "solana" ? "Solana" : "Bitcoin"} n’est pas valide.</div>}
+        <div className="mt-5 rounded-2xl bg-[#101735] border border-[#303b6e] p-4 text-sm text-gray-300 flex gap-3"><Link2 size={19} className="shrink-0 text-[#9de2ba]" /><p>Colle uniquement ton adresse publique. Ne renseigne jamais ta phrase secrète ni ta clé privée.</p></div>
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <button type="button" onClick={onClose} className="bg-[#232c52] hover:bg-[#303b6e] transition rounded-2xl py-3 font-medium">Retour</button>
+          <button type="submit" disabled={!isValid} className="bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-50 disabled:cursor-not-allowed transition rounded-2xl py-3 font-semibold">Ajouter</button>
+        </div>
+      </form>
     </div>
   );
 }
