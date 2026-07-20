@@ -886,14 +886,46 @@ function FinanceView() {
   const financeGroups = (() => {
     const groups = new Map();
     financeSources.forEach((source) => {
-      const walletGroupId = source.category === "wallet"
-        ? source.walletId || "wallet"
-        : null;
-      const groupId = source.bankSessionId || source.exchangeSessionId || walletGroupId || source.id;
-      if (!groups.has(groupId)) groups.set(groupId, { id: groupId, name: source.name, sources: [] });
+      const providerId = source.category === "bank"
+        ? source.bankId || source.name
+        : source.category === "exchange"
+          ? source.exchangeId || source.name
+          : source.category === "wallet"
+            ? source.walletId || source.name
+            : source.id;
+      const groupId = `${source.category}-${providerId}`;
+      if (!groups.has(groupId)) groups.set(groupId, {
+        id: groupId,
+        name: source.name,
+        category: source.category,
+        sources: [],
+      });
       groups.get(groupId).sources.push(source);
     });
-    return Array.from(groups.values());
+    const categoryOrder = { bank: 0, exchange: 1, wallet: 2 };
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        sources: [...group.sources].sort((a, b) => {
+          const cardDifference = Number(isCardSource(a)) - Number(isCardSource(b));
+          if (cardDifference) return cardDifference;
+          const networkDifference = (a.assetNetworkName || "").localeCompare(
+            b.assetNetworkName || "",
+            "fr",
+            { sensitivity: "base" }
+          );
+          if (networkDifference) return networkDifference;
+          return (a.accountName || "").localeCompare(
+            b.accountName || "",
+            "fr",
+            { sensitivity: "base" }
+          );
+        }),
+      }))
+      .sort((a, b) => {
+        const categoryDifference = (categoryOrder[a.category] ?? 99) - (categoryOrder[b.category] ?? 99);
+        return categoryDifference || a.name.localeCompare(b.name, "fr", { sensitivity: "base" });
+      });
   })();
   const formattedTotal = new Intl.NumberFormat("fr-FR", {
     style: "currency",
