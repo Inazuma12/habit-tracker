@@ -16,6 +16,7 @@ import {
   Landmark,
   Link2,
   Clock,
+  MapPin,
   LayoutDashboard,
   ListChecks,
   Moon,
@@ -31,6 +32,7 @@ const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 const MAIN_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "agenda", label: "Agenda", icon: CalendarDays },
   { id: "habits", label: "Habitudes", icon: ListChecks },
   { id: "sport", label: "Sport", icon: Dumbbell },
   { id: "finance", label: "Finance", icon: WalletCards },
@@ -159,6 +161,31 @@ function getDateOnly(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+function getHabitBestStreak(habit, habitData, referenceDate = new Date()) {
+  const today = getDateOnly(referenceDate);
+  const creationDate = getDateOnly(new Date(habit.createdAt));
+  const currentDate = new Date(creationDate);
+  currentDate.setDate(currentDate.getDate() + 1);
+
+  let currentStreak = 0;
+  let bestStreak = 0;
+
+  while (currentDate <= today) {
+    const key = getDateKey(habit.id, currentDate);
+
+    if (habitData[key] === "success") {
+      currentStreak++;
+      bestStreak = Math.max(bestStreak, currentStreak);
+    } else {
+      currentStreak = 0;
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return bestStreak;
+}
+
 function formatCountdown(milliseconds, showSeconds) {
   const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
   const days = Math.floor(totalSeconds / 86400);
@@ -229,6 +256,11 @@ export default function HabitTrackerApp() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [agendaEvents, setAgendaEvents] = useState(() => {
+    const saved = localStorage.getItem("agenda-events");
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const selectedHabit =
     habits.find((habit) => habit.id === selectedHabitId) || habits[0] || null;
 
@@ -247,6 +279,10 @@ export default function HabitTrackerApp() {
   useEffect(() => {
     localStorage.setItem("sport-sessions", JSON.stringify(sportSessions));
   }, [sportSessions]);
+
+  useEffect(() => {
+    localStorage.setItem("agenda-events", JSON.stringify(agendaEvents));
+  }, [agendaEvents]);
 
   useEffect(() => {
     localStorage.setItem("active-view", activeView);
@@ -298,6 +334,7 @@ export default function HabitTrackerApp() {
       habitData,
       selectedHabitId,
       sportSessions,
+      agendaEvents,
     };
 
     return JSON.stringify(data, null, 2);
@@ -350,6 +387,7 @@ export default function HabitTrackerApp() {
         setHabitData(parsed.habitData || {});
         setSelectedHabitId(parsed.selectedHabitId || null);
         setSportSessions(parsed.sportSessions || []);
+        setAgendaEvents(parsed.agendaEvents || []);
 
         setSettingsOpen(false);
       } catch {
@@ -476,6 +514,7 @@ export default function HabitTrackerApp() {
             <div className="sidebar-habits-scroll min-h-0 overflow-y-auto pr-4 flex flex-col gap-3">
               {habits.map((habit) => {
                 const selected = selectedHabit?.id === habit.id;
+                const streakDays = getHabitBestStreak(habit, habitData, today);
 
                 return (
                   <button
@@ -486,9 +525,29 @@ export default function HabitTrackerApp() {
                         ? "bg-[#294a3b] border-[#5fa37c]"
                         : "bg-[#232c52] border-[#303b6e] hover:bg-[#2f3b70]"
                     }`}
-                    title={habit.name}
+                    title={`${habit.name} · record de ${streakDays} jour${
+                      streakDays === 1 ? "" : "s"
+                    } consécutif${streakDays === 1 ? "" : "s"}`}
                   >
-                    {sidebarOpen ? habit.name : habit.name.charAt(0)}
+                    {sidebarOpen ? (
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="min-w-0 truncate">{habit.name}</span>
+                        <span
+                          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                            selected
+                              ? "bg-[#315843] border-[#5fa37c] text-[#9de2ba]"
+                              : "bg-[#161d38] border-[#303b6e] text-gray-300"
+                          }`}
+                          aria-label={`Record de ${streakDays} jour${
+                            streakDays === 1 ? "" : "s"
+                          } consécutif${streakDays === 1 ? "" : "s"}`}
+                        >
+                          {streakDays} j
+                        </span>
+                      </span>
+                    ) : (
+                      habit.name.charAt(0)
+                    )}
                   </button>
                 );
               })}
@@ -546,6 +605,10 @@ export default function HabitTrackerApp() {
             sportSessions={sportSessions}
             setSportSessions={setSportSessions}
           />
+        )}
+
+        {activeView === "agenda" && (
+          <AgendaView events={agendaEvents} setEvents={setAgendaEvents} />
         )}
 
         {activeView === "finance" && <FinanceView />}
@@ -734,6 +797,137 @@ function readStoredFinanceSources() {
   } catch {
     return [];
   }
+}
+
+const AGENDA_COLORS = {
+  personnel: { label: "Personnel", dot: "bg-[#8b7cf6]", pill: "bg-[#342d65] text-[#c9c1ff]" },
+  travail: { label: "Travail", dot: "bg-[#5fa37c]", pill: "bg-[#294a3b] text-[#9de2ba]" },
+  sport: { label: "Sport", dot: "bg-[#e0a85b]", pill: "bg-[#5a4028] text-[#ffd79d]" },
+  islam: { label: "Islam", dot: "bg-[#38bdf8]", pill: "bg-[#173b52] text-[#9bddff]" },
+};
+
+function agendaDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function AgendaView({ events, setEvents }) {
+  const today = getDateOnly(new Date());
+  const [month, setMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState(agendaDateKey(today));
+  const [formOpen, setFormOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [time, setTime] = useState("09:00");
+  const [location, setLocation] = useState("");
+  const [category, setCategory] = useState("personnel");
+
+  const firstDayOffset = (month.getDay() + 6) % 7;
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const day = index - firstDayOffset + 1;
+    return day > 0 && day <= daysInMonth ? new Date(month.getFullYear(), month.getMonth(), day) : null;
+  });
+  const sortedEvents = [...events].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+  const selectedEvents = sortedEvents.filter((event) => event.date === selectedDate);
+  const selectedDateObject = new Date(`${selectedDate}T12:00:00`);
+
+  function openNewEvent(date = selectedDate) {
+    setSelectedDate(date);
+    setTitle("");
+    setTime("09:00");
+    setLocation("");
+    setCategory("personnel");
+    setFormOpen(true);
+  }
+
+  function addEvent(event) {
+    event.preventDefault();
+    if (!title.trim()) return;
+    setEvents((current) => [...current, {
+      id: Date.now(),
+      title: title.trim(),
+      date: selectedDate,
+      time,
+      location: location.trim(),
+      category,
+    }]);
+    setFormOpen(false);
+  }
+
+  return (
+    <div className="min-h-full pb-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-[#9de2ba]">Organisation</div>
+          <h1 className="text-4xl font-bold">Mon agenda</h1>
+          <p className="mt-2 text-gray-400">Planifiez vos rendez-vous et gardez votre semaine en vue.</p>
+        </div>
+        <button onClick={() => openNewEvent()} className="flex items-center gap-2 rounded-2xl bg-[#315843] px-5 py-3 font-semibold text-white transition hover:bg-[#3d6b51]">
+          <Plus size={20} /> Nouvel événement
+        </button>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="rounded-[32px] border border-[#232c52] bg-[#161d38] p-5 shadow-2xl sm:p-7">
+          <div className="mb-6 flex items-center justify-between">
+            <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#232c52] transition hover:bg-[#303b6e]" aria-label="Mois précédent"><ChevronLeft /></button>
+            <div className="text-center">
+              <h2 className="text-2xl font-bold capitalize">{month.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}</h2>
+              <button onClick={() => { setMonth(new Date(today.getFullYear(), today.getMonth(), 1)); setSelectedDate(agendaDateKey(today)); }} className="mt-1 text-sm font-semibold text-[#9de2ba]">Aujourd'hui</button>
+            </div>
+            <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#232c52] transition hover:bg-[#303b6e]" aria-label="Mois suivant"><ChevronRight /></button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2">
+            {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((day) => <div key={day} className="pb-2 text-center text-xs font-bold uppercase tracking-wider text-gray-400">{day}</div>)}
+            {cells.map((date, index) => {
+              if (!date) return <div key={`empty-${index}`} className="min-h-20 rounded-2xl bg-[#101735]/40 sm:min-h-28" />;
+              const key = agendaDateKey(date);
+              const dayEvents = sortedEvents.filter((event) => event.date === key);
+              const selected = key === selectedDate;
+              const isToday = key === agendaDateKey(today);
+              return (
+                <button key={key} onClick={() => setSelectedDate(key)} onDoubleClick={() => openNewEvent(key)} className={`min-h-20 rounded-2xl border p-2 text-left align-top transition sm:min-h-28 sm:p-3 ${selected ? "border-[#5fa37c] bg-[#294a3b]" : "border-[#303b6e] bg-[#101735] hover:bg-[#232c52]"}`}>
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${isToday ? "bg-[#5fa37c] text-white" : ""}`}>{date.getDate()}</span>
+                  <div className="mt-2 space-y-1">
+                    {dayEvents.slice(0, 2).map((event) => <div key={event.id} className="flex items-center gap-1.5 truncate text-[11px] text-gray-300"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${AGENDA_COLORS[event.category]?.dot}`} /><span className="truncate">{event.time} {event.title}</span></div>)}
+                    {dayEvents.length > 2 && <div className="text-[11px] text-gray-400">+ {dayEvents.length - 2} autre{dayEvents.length > 3 ? "s" : ""}</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <aside className="rounded-[32px] border border-[#232c52] bg-[#161d38] p-6 shadow-2xl">
+          <div className="mb-6 flex items-start justify-between gap-3">
+            <div><div className="text-sm capitalize text-gray-400">{selectedDateObject.toLocaleDateString("fr-FR", { weekday: "long" })}</div><h2 className="text-2xl font-bold capitalize">{selectedDateObject.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</h2></div>
+            <button onClick={() => openNewEvent()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#232c52] hover:bg-[#303b6e]" aria-label="Ajouter"><Plus size={19} /></button>
+          </div>
+          <div className="space-y-3">
+            {selectedEvents.length === 0 && <div className="rounded-2xl border border-dashed border-[#303b6e] px-4 py-10 text-center"><CalendarDays className="mx-auto mb-3 text-gray-400" /><p className="font-semibold">Journée libre</p><p className="mt-1 text-sm text-gray-400">Ajoutez votre premier événement.</p></div>}
+            {selectedEvents.map((event) => (
+              <article key={event.id} className="group rounded-2xl border border-[#303b6e] bg-[#101735] p-4">
+                <div className="flex items-start gap-3"><span className={`mt-1 h-3 w-3 shrink-0 rounded-full ${AGENDA_COLORS[event.category]?.dot}`} /><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="font-semibold">{event.title}</h3><button onClick={() => setEvents((current) => current.filter((item) => item.id !== event.id))} className="text-gray-400 opacity-0 transition hover:text-[#ffb0be] group-hover:opacity-100" aria-label="Supprimer"><Trash2 size={17} /></button></div><div className="mt-2 flex items-center gap-2 text-sm text-gray-400"><Clock size={15} /> {event.time}</div>{event.location && <div className="mt-1 flex items-center gap-2 text-sm text-gray-400"><MapPin size={15} /> <span className="truncate">{event.location}</span></div>}<span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${AGENDA_COLORS[event.category]?.pill}`}>{AGENDA_COLORS[event.category]?.label}</span></div></div>
+              </article>
+            ))}
+          </div>
+        </aside>
+      </div>
+
+      {formOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={() => setFormOpen(false)}>
+          <form onSubmit={addEvent} onMouseDown={(event) => event.stopPropagation()} className="w-full max-w-md rounded-[28px] border border-[#303b6e] bg-[#161d38] p-6 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between"><div><h2 className="text-2xl font-bold">Nouvel événement</h2><p className="mt-1 text-sm text-gray-400">{selectedDateObject.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</p></div><button type="button" onClick={() => setFormOpen(false)} className="rounded-xl p-2 text-gray-400 hover:bg-[#232c52] hover:text-white"><X /></button></div>
+            <label className="mb-4 block"><span className="mb-2 block text-sm font-semibold text-gray-300">Titre</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex. Rendez-vous médecin" className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]" /></label>
+            <div className="mb-4 grid grid-cols-2 gap-3"><label><span className="mb-2 block text-sm font-semibold text-gray-300">Date</span><input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]" /></label><label><span className="mb-2 block text-sm font-semibold text-gray-300">Heure</span><input type="time" value={time} onChange={(event) => setTime(event.target.value)} className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]" /></label></div>
+            <label className="mb-4 block"><span className="mb-2 block text-sm font-semibold text-gray-300">Lieu <span className="font-normal text-gray-400">(facultatif)</span></span><input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Ex. Cabinet, visioconférence…" className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]" /></label>
+            <label className="mb-6 block"><span className="mb-2 block text-sm font-semibold text-gray-300">Catégorie</span><select value={category} onChange={(event) => setCategory(event.target.value)} className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]">{Object.entries(AGENDA_COLORS).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}</select></label>
+            <button type="submit" className="w-full rounded-2xl bg-[#315843] px-5 py-3 font-semibold transition hover:bg-[#3d6b51]">Ajouter à l'agenda</button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function FinanceView() {
@@ -2350,7 +2544,244 @@ function DashboardView({
           )}
         </section>
       </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-6 mt-6">
+        <HabitRadarChart habits={habits} habitData={habitData} />
+        <HabitWinLossProgress habits={habits} habitData={habitData} />
+      </div>
     </div>
+  );
+}
+
+function getHabitRadarAxes(habits, habitData) {
+  const axes = habits.slice(0, 8).map((habit) => {
+    const stats = getHabitOverview([habit], habitData);
+    const rate = stats.trackedDays > 0 ? (stats.wins / stats.trackedDays) * 100 : 0;
+
+    return {
+      label: habit.name,
+      value: rate,
+    };
+  });
+
+  if (axes.length === 1) {
+    const habit = habits[0];
+    const stats = getHabitOverview([habit], habitData);
+    const target = Math.max(1, habit.targetDays || 90);
+
+    axes.push(
+      { label: "Jours suivis", value: Math.min(100, (stats.trackedDays / target) * 100) },
+      { label: "Objectif wins", value: Math.min(100, (stats.wins / target) * 100) }
+    );
+  } else if (axes.length === 2) {
+    const average = (axes[0].value + axes[1].value) / 2;
+    axes.push({ label: "Moyenne", value: average });
+  }
+
+  return axes;
+}
+
+function HabitRadarChart({ habits, habitData }) {
+  const axes = getHabitRadarAxes(habits, habitData);
+  const centerX = 210;
+  const centerY = 150;
+  const radius = 104;
+  const labelRadius = 134;
+
+  const getPoint = (index, pointRadius) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / axes.length;
+    return {
+      x: centerX + Math.cos(angle) * pointRadius,
+      y: centerY + Math.sin(angle) * pointRadius,
+    };
+  };
+
+  const toPoints = (scale) =>
+    axes
+      .map((_, index) => {
+        const point = getPoint(index, radius * scale);
+        return `${point.x},${point.y}`;
+      })
+      .join(" ");
+
+  const dataPoints = axes
+    .map((axis, index) => {
+      const point = getPoint(index, radius * (axis.value / 100));
+      return `${point.x},${point.y}`;
+    })
+    .join(" ");
+
+  return (
+    <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+      <div className="mb-2">
+        <h2 className="text-2xl font-bold">Radar des habitudes</h2>
+        <p className="text-sm text-gray-300 mt-1">Taux de reussite par habitude</p>
+      </div>
+
+      {axes.length >= 3 ? (
+        <svg
+          viewBox="0 0 420 310"
+          className="w-full max-h-[340px]"
+          role="img"
+          aria-label="Graphique radar du taux de reussite des habitudes"
+        >
+          <defs>
+            <linearGradient id="habit-radar-fill" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#9de2ba" stopOpacity="0.75" />
+              <stop offset="100%" stopColor="#5fa37c" stopOpacity="0.25" />
+            </linearGradient>
+          </defs>
+
+          {[0.2, 0.4, 0.6, 0.8, 1].map((scale) => (
+            <polygon
+              key={scale}
+              points={toPoints(scale)}
+              fill="none"
+              stroke="var(--border-strong)"
+              strokeWidth="1"
+              opacity={scale === 1 ? 0.9 : 0.55}
+            />
+          ))}
+
+          {axes.map((axis, index) => {
+            const end = getPoint(index, radius);
+            const label = getPoint(index, labelRadius);
+            const anchor = label.x < centerX - 8 ? "end" : label.x > centerX + 8 ? "start" : "middle";
+            const shortLabel = axis.label.length > 16 ? `${axis.label.slice(0, 14)}…` : axis.label;
+
+            return (
+              <g key={`${axis.label}-${index}`}>
+                <line
+                  x1={centerX}
+                  y1={centerY}
+                  x2={end.x}
+                  y2={end.y}
+                  stroke="var(--border-strong)"
+                  strokeWidth="1"
+                  opacity="0.7"
+                />
+                <text
+                  x={label.x}
+                  y={label.y}
+                  textAnchor={anchor}
+                  dominantBaseline="middle"
+                  fill="var(--text-secondary)"
+                  fontSize="12"
+                  fontWeight="600"
+                >
+                  {shortLabel}
+                </text>
+              </g>
+            );
+          })}
+
+          <polygon
+            points={dataPoints}
+            fill="url(#habit-radar-fill)"
+            stroke="var(--accent-border)"
+            strokeWidth="3"
+            strokeLinejoin="round"
+          />
+
+          {axes.map((axis, index) => {
+            const point = getPoint(index, radius * (axis.value / 100));
+            return (
+              <circle
+                key={`point-${axis.label}-${index}`}
+                cx={point.x}
+                cy={point.y}
+                r="4"
+                fill="var(--accent-text)"
+                stroke="var(--surface)"
+                strokeWidth="2"
+              />
+            );
+          })}
+        </svg>
+      ) : (
+        <div className="h-72 flex items-center justify-center text-gray-300">
+          Ajoute une habitude pour afficher le graphique.
+        </div>
+      )}
+
+      {habits.length > 8 && (
+        <p className="text-xs text-gray-400 text-center">Les 8 premieres habitudes sont affichees.</p>
+      )}
+    </section>
+  );
+}
+
+function HabitWinLossProgress({ habits, habitData }) {
+  const trackedHabitRates = habits
+    .map((habit) => {
+      const stats = getHabitOverview([habit], habitData);
+
+      return stats.trackedDays > 0
+        ? (stats.wins / stats.trackedDays) * 100
+        : null;
+    })
+    .filter((rate) => rate !== null);
+
+  const winPercent = trackedHabitRates.length > 0
+    ? trackedHabitRates.reduce((total, rate) => total + rate, 0) / trackedHabitRates.length
+    : 0;
+  const lossPercent = trackedHabitRates.length > 0 ? 100 - winPercent : 0;
+  const formatPercent = (value) =>
+    value.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+
+  return (
+    <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl flex flex-col">
+      <div>
+        <h2 className="text-2xl font-bold">Bilan global</h2>
+        <p className="text-sm text-gray-300 mt-1">Moyenne des taux de reussite de chaque habitude</p>
+      </div>
+
+      <div className="flex-1 flex flex-col justify-center py-10">
+        <div className="flex items-end justify-between gap-4 mb-4">
+          <div>
+            <div className="text-4xl font-bold tabular-nums">{formatPercent(winPercent)}%</div>
+            <div className="text-sm text-gray-300 mt-1">de reussite moyenne</div>
+          </div>
+          <div className="text-right text-sm text-gray-300">
+            {trackedHabitRates.length} habitude{trackedHabitRates.length === 1 ? "" : "s"} prise{trackedHabitRates.length === 1 ? "" : "s"} en compte
+          </div>
+        </div>
+
+        <div
+          className="h-7 w-full overflow-hidden rounded-full bg-[#232c52] flex"
+          role="img"
+          aria-label={`${formatPercent(winPercent)} pour cent de reussite moyenne et ${formatPercent(lossPercent)} pour cent d'echec moyen`}
+        >
+          <div
+            className="h-full bg-[#5fa37c] transition-all duration-500"
+            style={{ width: `${winPercent}%` }}
+            title={`${formatPercent(winPercent)} % de reussite moyenne`}
+          />
+          <div
+            className="h-full bg-[#d16a7f] transition-all duration-500"
+            style={{ width: `${lossPercent}%` }}
+            title={`${formatPercent(lossPercent)} % d'echec moyen`}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-5">
+          <div className="bg-[#203d33] border border-[#315843] rounded-2xl p-4">
+            <div className="flex items-center gap-2 text-[#9de2ba] font-semibold">
+              <span className="w-3 h-3 rounded-full bg-[#5fa37c]" />
+              Taux de reussite
+            </div>
+            <div className="text-3xl font-bold mt-2 tabular-nums">{formatPercent(winPercent)}%</div>
+          </div>
+          <div className="bg-[#3d252d] border border-[#6a3140] rounded-2xl p-4">
+            <div className="flex items-center gap-2 text-[#ffb0be] font-semibold">
+              <span className="w-3 h-3 rounded-full bg-[#d16a7f]" />
+              Taux d'echec
+            </div>
+            <div className="text-3xl font-bold mt-2 tabular-nums">{formatPercent(lossPercent)}%</div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
