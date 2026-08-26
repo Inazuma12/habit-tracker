@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node server/dev.js",
+    "dev:web": "vite --configLoader runner",
+    "api": "node --env-file-if-exists=.env server/bank-api.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

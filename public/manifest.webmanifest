@@ -1,0 +1,24 @@
+{
+  "id": "/",
+  "name": "Habit Tracker",
+  "short_name": "Habit Tracker",
+  "description": "Suivi personnel des habitudes, du sport et des finances.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#111936",
+  "icons": [
+    {
+      "src": "/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

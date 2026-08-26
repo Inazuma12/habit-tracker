@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  Bitcoin,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -12,7 +13,10 @@ import {
   Plus,
   Settings,
   Flag,
+  Landmark,
+  Link2,
   Clock,
+  MapPin,
   LayoutDashboard,
   ListChecks,
   Moon,
@@ -20,14 +24,28 @@ import {
   Sun,
   Trash2,
   Trophy,
+  Wallet,
+  WalletCards,
 } from "lucide-react";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const ALL_WEEK_DAYS = [1, 2, 3, 4, 5, 6, 0];
+const WEEK_DAY_OPTIONS = [
+  { value: 1, label: "Lun" },
+  { value: 2, label: "Mar" },
+  { value: 3, label: "Mer" },
+  { value: 4, label: "Jeu" },
+  { value: 5, label: "Ven" },
+  { value: 6, label: "Sam" },
+  { value: 0, label: "Dim" },
+];
 
 const MAIN_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "agenda", label: "Agenda", icon: CalendarDays },
   { id: "habits", label: "Habitudes", icon: ListChecks },
   { id: "sport", label: "Sport", icon: Dumbbell },
+  { id: "finance", label: "Finance", icon: WalletCards },
 ];
 
 const THEME_OPTIONS = [
@@ -153,6 +171,46 @@ function getDateOnly(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+function getHabitActiveDays(habit) {
+  return Array.isArray(habit.activeWeekDays) && habit.activeWeekDays.length > 0
+    ? habit.activeWeekDays
+    : ALL_WEEK_DAYS;
+}
+
+function isHabitDayActive(habit, date) {
+  return getHabitActiveDays(habit).includes(date.getDay());
+}
+
+function getHabitBestStreak(habit, habitData, referenceDate = new Date()) {
+  const today = getDateOnly(referenceDate);
+  const creationDate = getDateOnly(new Date(habit.createdAt));
+  const currentDate = new Date(creationDate);
+  currentDate.setDate(currentDate.getDate() + 1);
+
+  let currentStreak = 0;
+  let bestStreak = 0;
+
+  while (currentDate <= today) {
+    if (!isHabitDayActive(habit, currentDate)) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      continue;
+    }
+
+    const key = getDateKey(habit.id, currentDate);
+
+    if (habitData[key] === "success") {
+      currentStreak++;
+      bestStreak = Math.max(bestStreak, currentStreak);
+    } else {
+      currentStreak = 0;
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return bestStreak;
+}
+
 function formatCountdown(milliseconds, showSeconds) {
   const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
   const days = Math.floor(totalSeconds / 86400);
@@ -204,6 +262,7 @@ export default function HabitTrackerApp() {
         targetDays: 90,
         countdownEnabled: false,
         countdownShowSeconds: true,
+        activeWeekDays: [...ALL_WEEK_DAYS],
       },
     ];
   });
@@ -220,6 +279,11 @@ export default function HabitTrackerApp() {
 
   const [sportSessions, setSportSessions] = useState(() => {
     const saved = localStorage.getItem("sport-sessions");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [agendaEvents, setAgendaEvents] = useState(() => {
+    const saved = localStorage.getItem("agenda-events");
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -243,6 +307,10 @@ export default function HabitTrackerApp() {
   }, [sportSessions]);
 
   useEffect(() => {
+    localStorage.setItem("agenda-events", JSON.stringify(agendaEvents));
+  }, [agendaEvents]);
+
+  useEffect(() => {
     localStorage.setItem("active-view", activeView);
   }, [activeView]);
 
@@ -264,6 +332,7 @@ export default function HabitTrackerApp() {
       targetDays: 90,
       countdownEnabled: false,
       countdownShowSeconds: true,
+      activeWeekDays: [...ALL_WEEK_DAYS],
     };
 
     setHabits((prev) => [...prev, newHabit]);
@@ -292,6 +361,7 @@ export default function HabitTrackerApp() {
       habitData,
       selectedHabitId,
       sportSessions,
+      agendaEvents,
     };
 
     return JSON.stringify(data, null, 2);
@@ -344,6 +414,7 @@ export default function HabitTrackerApp() {
         setHabitData(parsed.habitData || {});
         setSelectedHabitId(parsed.selectedHabitId || null);
         setSportSessions(parsed.sportSessions || []);
+        setAgendaEvents(parsed.agendaEvents || []);
 
         setSettingsOpen(false);
       } catch {
@@ -470,6 +541,7 @@ export default function HabitTrackerApp() {
             <div className="sidebar-habits-scroll min-h-0 overflow-y-auto pr-4 flex flex-col gap-3">
               {habits.map((habit) => {
                 const selected = selectedHabit?.id === habit.id;
+                const streakDays = getHabitBestStreak(habit, habitData, today);
 
                 return (
                   <button
@@ -480,9 +552,29 @@ export default function HabitTrackerApp() {
                         ? "bg-[#294a3b] border-[#5fa37c]"
                         : "bg-[#232c52] border-[#303b6e] hover:bg-[#2f3b70]"
                     }`}
-                    title={habit.name}
+                    title={`${habit.name} · record de ${streakDays} jour${
+                      streakDays === 1 ? "" : "s"
+                    } consécutif${streakDays === 1 ? "" : "s"}`}
                   >
-                    {sidebarOpen ? habit.name : habit.name.charAt(0)}
+                    {sidebarOpen ? (
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="min-w-0 truncate">{habit.name}</span>
+                        <span
+                          className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                            selected
+                              ? "bg-[#315843] border-[#5fa37c] text-[#9de2ba]"
+                              : "bg-[#161d38] border-[#303b6e] text-gray-300"
+                          }`}
+                          aria-label={`Record de ${streakDays} jour${
+                            streakDays === 1 ? "" : "s"
+                          } consécutif${streakDays === 1 ? "" : "s"}`}
+                        >
+                          {streakDays} j
+                        </span>
+                      </span>
+                    ) : (
+                      habit.name.charAt(0)
+                    )}
                   </button>
                 );
               })}
@@ -541,6 +633,12 @@ export default function HabitTrackerApp() {
             setSportSessions={setSportSessions}
           />
         )}
+
+        {activeView === "agenda" && (
+          <AgendaView events={agendaEvents} setEvents={setAgendaEvents} />
+        )}
+
+        {activeView === "finance" && <FinanceView />}
       </main>
 
       {globalSettingsOpen && (
@@ -568,6 +666,1440 @@ export default function HabitTrackerApp() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function replaceCoinbaseSources(sources, source, data) {
+  const previousGroupId = source.exchangeSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.exchangeSessionId !== previousGroupId)
+  );
+  const exchangeSessionId = `coinbase-${Date.now()}`;
+  const coinbaseSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: account.name,
+    exchangeAccountId: account.accountId,
+    exchangeSessionId,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...coinbaseSources];
+}
+
+function replaceEthereumSources(sources, source, data) {
+  const previousGroupId = source.walletSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.walletSessionId !== previousGroupId)
+  );
+  const walletSessionId = `ethereum-${source.walletAddress.toLowerCase()}`;
+  const addressLabel = `${source.walletAddress.slice(0, 6)}…${source.walletAddress.slice(-4)}`;
+  const walletSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: `${account.name} · ${addressLabel}`,
+    walletAccountId: account.accountId,
+    walletSessionId,
+    assetNetworkId: account.networkId,
+    assetNetworkName: account.networkName,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...walletSources];
+}
+
+function replaceAptosSources(sources, source, data) {
+  const previousGroupId = source.walletSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.walletSessionId !== previousGroupId)
+  );
+  const walletSessionId = `aptos-${source.walletAddress.toLowerCase()}`;
+  const addressLabel = `${source.walletAddress.slice(0, 6)}…${source.walletAddress.slice(-4)}`;
+  const walletSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: `${account.name} · ${addressLabel}`,
+    walletAccountId: account.accountId,
+    walletSessionId,
+    assetNetworkId: account.networkId,
+    assetNetworkName: account.networkName,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...walletSources];
+}
+
+function replaceBitcoinSources(sources, source, data) {
+  const previousGroupId = source.walletSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.walletSessionId !== previousGroupId)
+  );
+  const walletSessionId = `bitcoin-${source.walletAddress.toLowerCase()}`;
+  const addressLabel = `${source.walletAddress.slice(0, 6)}…${source.walletAddress.slice(-4)}`;
+  const walletSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: `${account.name} · ${addressLabel}`,
+    walletAccountId: account.accountId,
+    walletSessionId,
+    assetNetworkId: account.networkId,
+    assetNetworkName: account.networkName,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...walletSources];
+}
+
+function replaceSolanaSources(sources, source, data) {
+  const previousGroupId = source.walletSessionId;
+  const remainingSources = sources.filter((item) =>
+    item.id !== source.id && (!previousGroupId || item.walletSessionId !== previousGroupId)
+  );
+  const walletSessionId = `solana-${source.walletAddress}`;
+  const addressLabel = `${source.walletAddress.slice(0, 6)}…${source.walletAddress.slice(-4)}`;
+  const walletSources = data.accounts.map((account, index) => ({
+    ...source,
+    id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+    accountName: `${account.name} · ${addressLabel}`,
+    walletAccountId: account.accountId,
+    walletSessionId,
+    assetNetworkId: account.networkId,
+    assetNetworkName: account.networkName,
+    assetAmount: account.assetAmount,
+    assetCurrency: account.assetCurrency,
+    balance: account.euroValue,
+    currency: "EUR",
+    connectionStatus: "connected",
+    lastSyncAt: data.syncedAt,
+  }));
+  return [...remainingSources, ...walletSources];
+}
+
+function replaceBankSources(sources, source, data) {
+  const existingGroup = sources.filter((item) => item.bankSessionId === data.sessionId);
+  const remainingSources = sources.filter((item) => item.bankSessionId !== data.sessionId);
+  const bankSources = data.accounts.map((account, index) => {
+    const existing = existingGroup.find((item) => item.bankAccountId === account.accountId) || source;
+    return {
+      ...existing,
+      id: existing.bankAccountId === account.accountId ? existing.id : `${source.id}-${account.accountId || index}`,
+      accountName: account.name || existing.accountName,
+      lastFour: account.iban?.slice(-4) || existing.lastFour,
+      balance: account.balance,
+      currency: account.currency,
+      accountTypeCode: account.accountTypeCode,
+      bankAccountId: account.accountId,
+      bankSessionId: data.sessionId,
+      connectionStatus: "connected",
+      lastSyncAt: data.syncedAt,
+    };
+  });
+  return [...remainingSources, ...bankSources];
+}
+
+function readStoredFinanceSources() {
+  try {
+    const saved = localStorage.getItem("finance-sources");
+    if (!saved) return [];
+    return JSON.parse(saved).filter((source) => !(
+      source.category === "wallet" && (source.bankSessionId || source.bankAccountId)
+    ));
+  } catch {
+    return [];
+  }
+}
+
+const AGENDA_COLORS = {
+  personnel: { label: "Personnel", dot: "bg-[#8b7cf6]", pill: "bg-[#342d65] text-[#c9c1ff]" },
+  travail: { label: "Travail", dot: "bg-[#5fa37c]", pill: "bg-[#294a3b] text-[#9de2ba]" },
+  sport: { label: "Sport", dot: "bg-[#e0a85b]", pill: "bg-[#5a4028] text-[#ffd79d]" },
+  islam: { label: "Islam", dot: "bg-[#38bdf8]", pill: "bg-[#173b52] text-[#9bddff]" },
+};
+
+function agendaDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function AgendaView({ events, setEvents }) {
+  const today = getDateOnly(new Date());
+  const [month, setMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState(agendaDateKey(today));
+  const [formOpen, setFormOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [time, setTime] = useState("09:00");
+  const [location, setLocation] = useState("");
+  const [category, setCategory] = useState("personnel");
+
+  const firstDayOffset = (month.getDay() + 6) % 7;
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const day = index - firstDayOffset + 1;
+    return day > 0 && day <= daysInMonth ? new Date(month.getFullYear(), month.getMonth(), day) : null;
+  });
+  const sortedEvents = [...events].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+  const selectedEvents = sortedEvents.filter((event) => event.date === selectedDate);
+  const selectedDateObject = new Date(`${selectedDate}T12:00:00`);
+
+  function openNewEvent(date = selectedDate) {
+    setSelectedDate(date);
+    setTitle("");
+    setTime("09:00");
+    setLocation("");
+    setCategory("personnel");
+    setFormOpen(true);
+  }
+
+  function addEvent(event) {
+    event.preventDefault();
+    if (!title.trim()) return;
+    setEvents((current) => [...current, {
+      id: Date.now(),
+      title: title.trim(),
+      date: selectedDate,
+      time,
+      location: location.trim(),
+      category,
+    }]);
+    setFormOpen(false);
+  }
+
+  return (
+    <div className="min-h-full pb-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-[#9de2ba]">Organisation</div>
+          <h1 className="text-4xl font-bold">Mon agenda</h1>
+          <p className="mt-2 text-gray-400">Planifiez vos rendez-vous et gardez votre semaine en vue.</p>
+        </div>
+        <button onClick={() => openNewEvent()} className="flex items-center gap-2 rounded-2xl bg-[#315843] px-5 py-3 font-semibold text-white transition hover:bg-[#3d6b51]">
+          <Plus size={20} /> Nouvel événement
+        </button>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="rounded-[32px] border border-[#232c52] bg-[#161d38] p-5 shadow-2xl sm:p-7">
+          <div className="mb-6 flex items-center justify-between">
+            <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#232c52] transition hover:bg-[#303b6e]" aria-label="Mois précédent"><ChevronLeft /></button>
+            <div className="text-center">
+              <h2 className="text-2xl font-bold capitalize">{month.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}</h2>
+              <button onClick={() => { setMonth(new Date(today.getFullYear(), today.getMonth(), 1)); setSelectedDate(agendaDateKey(today)); }} className="mt-1 text-sm font-semibold text-[#9de2ba]">Aujourd'hui</button>
+            </div>
+            <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#232c52] transition hover:bg-[#303b6e]" aria-label="Mois suivant"><ChevronRight /></button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2">
+            {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((day) => <div key={day} className="pb-2 text-center text-xs font-bold uppercase tracking-wider text-gray-400">{day}</div>)}
+            {cells.map((date, index) => {
+              if (!date) return <div key={`empty-${index}`} className="min-h-20 rounded-2xl bg-[#101735]/40 sm:min-h-28" />;
+              const key = agendaDateKey(date);
+              const dayEvents = sortedEvents.filter((event) => event.date === key);
+              const selected = key === selectedDate;
+              const isToday = key === agendaDateKey(today);
+              return (
+                <button key={key} onClick={() => setSelectedDate(key)} onDoubleClick={() => openNewEvent(key)} className={`min-h-20 rounded-2xl border p-2 text-left align-top transition sm:min-h-28 sm:p-3 ${selected ? "border-[#5fa37c] bg-[#294a3b]" : "border-[#303b6e] bg-[#101735] hover:bg-[#232c52]"}`}>
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${isToday ? "bg-[#5fa37c] text-white" : ""}`}>{date.getDate()}</span>
+                  <div className="mt-2 space-y-1">
+                    {dayEvents.slice(0, 2).map((event) => <div key={event.id} className="flex items-center gap-1.5 truncate text-[11px] text-gray-300"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${AGENDA_COLORS[event.category]?.dot}`} /><span className="truncate">{event.time} {event.title}</span></div>)}
+                    {dayEvents.length > 2 && <div className="text-[11px] text-gray-400">+ {dayEvents.length - 2} autre{dayEvents.length > 3 ? "s" : ""}</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <aside className="rounded-[32px] border border-[#232c52] bg-[#161d38] p-6 shadow-2xl">
+          <div className="mb-6 flex items-start justify-between gap-3">
+            <div><div className="text-sm capitalize text-gray-400">{selectedDateObject.toLocaleDateString("fr-FR", { weekday: "long" })}</div><h2 className="text-2xl font-bold capitalize">{selectedDateObject.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</h2></div>
+            <button onClick={() => openNewEvent()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#232c52] hover:bg-[#303b6e]" aria-label="Ajouter"><Plus size={19} /></button>
+          </div>
+          <div className="space-y-3">
+            {selectedEvents.length === 0 && <div className="rounded-2xl border border-dashed border-[#303b6e] px-4 py-10 text-center"><CalendarDays className="mx-auto mb-3 text-gray-400" /><p className="font-semibold">Journée libre</p><p className="mt-1 text-sm text-gray-400">Ajoutez votre premier événement.</p></div>}
+            {selectedEvents.map((event) => (
+              <article key={event.id} className="group rounded-2xl border border-[#303b6e] bg-[#101735] p-4">
+                <div className="flex items-start gap-3"><span className={`mt-1 h-3 w-3 shrink-0 rounded-full ${AGENDA_COLORS[event.category]?.dot}`} /><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><h3 className="font-semibold">{event.title}</h3><button onClick={() => setEvents((current) => current.filter((item) => item.id !== event.id))} className="text-gray-400 opacity-0 transition hover:text-[#ffb0be] group-hover:opacity-100" aria-label="Supprimer"><Trash2 size={17} /></button></div><div className="mt-2 flex items-center gap-2 text-sm text-gray-400"><Clock size={15} /> {event.time}</div>{event.location && <div className="mt-1 flex items-center gap-2 text-sm text-gray-400"><MapPin size={15} /> <span className="truncate">{event.location}</span></div>}<span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${AGENDA_COLORS[event.category]?.pill}`}>{AGENDA_COLORS[event.category]?.label}</span></div></div>
+              </article>
+            ))}
+          </div>
+        </aside>
+      </div>
+
+      {formOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={() => setFormOpen(false)}>
+          <form onSubmit={addEvent} onMouseDown={(event) => event.stopPropagation()} className="w-full max-w-md rounded-[28px] border border-[#303b6e] bg-[#161d38] p-6 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between"><div><h2 className="text-2xl font-bold">Nouvel événement</h2><p className="mt-1 text-sm text-gray-400">{selectedDateObject.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</p></div><button type="button" onClick={() => setFormOpen(false)} className="rounded-xl p-2 text-gray-400 hover:bg-[#232c52] hover:text-white"><X /></button></div>
+            <label className="mb-4 block"><span className="mb-2 block text-sm font-semibold text-gray-300">Titre</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex. Rendez-vous médecin" className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]" /></label>
+            <div className="mb-4 grid grid-cols-2 gap-3"><label><span className="mb-2 block text-sm font-semibold text-gray-300">Date</span><input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]" /></label><label><span className="mb-2 block text-sm font-semibold text-gray-300">Heure</span><input type="time" value={time} onChange={(event) => setTime(event.target.value)} className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]" /></label></div>
+            <label className="mb-4 block"><span className="mb-2 block text-sm font-semibold text-gray-300">Lieu <span className="font-normal text-gray-400">(facultatif)</span></span><input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Ex. Cabinet, visioconférence…" className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]" /></label>
+            <label className="mb-6 block"><span className="mb-2 block text-sm font-semibold text-gray-300">Catégorie</span><select value={category} onChange={(event) => setCategory(event.target.value)} className="w-full rounded-2xl border border-[#303b6e] bg-[#101735] px-4 py-3 outline-none focus:border-[#5fa37c]">{Object.entries(AGENDA_COLORS).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}</select></label>
+            <button type="submit" className="w-full rounded-2xl bg-[#315843] px-5 py-3 font-semibold transition hover:bg-[#3d6b51]">Ajouter à l'agenda</button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FinanceView() {
+  const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  const [accountSetupOpen, setAccountSetupOpen] = useState(false);
+  const [walletSetupOpen, setWalletSetupOpen] = useState(false);
+  const [phantomSetupOpen, setPhantomSetupOpen] = useState(false);
+  const [metamaskSetupOpen, setMetamaskSetupOpen] = useState(false);
+  const [selectedBank, setSelectedBank] = useState(null);
+  const [connectingSourceId, setConnectingSourceId] = useState(null);
+  const [bankError, setBankError] = useState("");
+  const autoSyncStarted = useRef(false);
+  const automaticAssetsSyncStarted = useRef(false);
+  const syncBankSourceRef = useRef(null);
+  const connectFinanceSourceRef = useRef(null);
+  const [financeSources, setFinanceSources] = useState(readStoredFinanceSources);
+
+  useEffect(() => {
+    localStorage.setItem("finance-sources", JSON.stringify(financeSources));
+  }, [financeSources]);
+
+  useEffect(() => {
+    syncBankSourceRef.current = syncBankSource;
+    connectFinanceSourceRef.current = connectFinanceSource;
+  });
+
+  useEffect(() => {
+    if (automaticAssetsSyncStarted.current) return;
+    const staleAfter = 15 * 60 * 1000;
+    const isStale = (source) =>
+      Date.now() - new Date(source.lastSyncAt || 0).getTime() >= staleAfter;
+
+    const bankSources = new Map();
+    const walletSources = new Map();
+    financeSources.forEach((source) => {
+      if (
+        source.category === "bank" &&
+        source.bankSessionId &&
+        source.connectionStatus === "connected" &&
+        isStale(source)
+      ) {
+        bankSources.set(source.bankSessionId, source);
+      }
+      if (source.category === "wallet" && source.walletAddress && isStale(source)) {
+        const key = `${source.walletScannerId || source.networkId}-${source.walletAddress}`;
+        if (!walletSources.has(key)) walletSources.set(key, source);
+      }
+    });
+    if (!bankSources.size && !walletSources.size) return;
+
+    automaticAssetsSyncStarted.current = true;
+    void (async () => {
+      for (const source of bankSources.values()) await syncBankSourceRef.current(source);
+      for (const source of walletSources.values()) await connectFinanceSourceRef.current(source);
+    })();
+  }, [financeSources]);
+
+  useEffect(() => {
+    if (autoSyncStarted.current) return;
+    const coinbaseSource = financeSources.find(
+      (source) => source.exchangeId === "coinbase" && source.connectionStatus === "connected"
+    );
+    if (!coinbaseSource) return;
+
+    const lastSyncTime = new Date(coinbaseSource.lastSyncAt || 0).getTime();
+    if (Date.now() - lastSyncTime < 15 * 60 * 1000) return;
+
+    autoSyncStarted.current = true;
+    fetch("/api/coinbase/sync", { method: "POST" })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Synchronisation Coinbase impossible");
+        if (!data.accounts?.length) throw new Error("Aucun actif avec un solde disponible n’a été trouvé sur Coinbase");
+        return data;
+      })
+      .then((data) => {
+        setBankError("");
+        setFinanceSources((sources) => replaceCoinbaseSources(sources, coinbaseSource, data));
+      })
+      .catch((error) => setBankError(error.message))
+      .finally(() => setConnectingSourceId(null));
+  }, [financeSources]);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const code = query.get("code");
+    const state = query.get("state");
+
+    if (window.location.pathname !== "/bank-callback" || !code || !state) {
+      return;
+    }
+
+    // Le code OAuth est à usage unique. Nettoyer l'URL immédiatement empêche
+    // React StrictMode de traiter deux fois le même retour en développement.
+    window.history.replaceState({}, "", "/");
+
+    fetch("/api/bank/callback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, state }),
+    })
+      .then(async (response) => {
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : {};
+        if (!response.ok) throw new Error(data.error || "Synchronisation impossible");
+        if (!data.accounts.length) throw new Error("Aucun compte autorisé n’a été trouvé");
+        return data;
+      })
+      .then((data) => {
+        setBankError("");
+        setFinanceSources((sources) => {
+          const replacedSource = sources.find((source) => source.id === data.sourceId);
+          if (!replacedSource || replacedSource.category !== "bank") return sources;
+          const previousSessionId = replacedSource?.bankSessionId;
+
+          return sources.flatMap((source) => {
+            if (previousSessionId && source.bankSessionId === previousSessionId && source.id !== data.sourceId) return [];
+            if (source.id !== data.sourceId) return source;
+
+            return data.accounts.map((account, index) => ({
+              ...source,
+              id: index === 0 ? source.id : `${source.id}-${account.accountId}`,
+              accountName: account.name || source.accountName,
+              lastFour: account.iban?.slice(-4) || source.lastFour,
+              balance: account.balance,
+              currency: account.currency,
+              accountTypeCode: account.accountTypeCode,
+              bankAccountId: account.accountId,
+              bankSessionId: data.sessionId,
+              connectionStatus: "connected",
+              lastSyncAt: new Date().toISOString(),
+            }));
+          });
+        });
+      })
+      .catch((error) => setBankError(error.message))
+      .finally(() => setConnectingSourceId(null));
+  }, []);
+
+  const isCardSource = (source) =>
+    source.accountTypeCode === "CARD" || /^carte\b/i.test(source.accountName || "");
+
+  const connectedBalance = financeSources.reduce(
+    (total, source) => total + (Number.isFinite(source.balance) && !isCardSource(source) ? source.balance : 0),
+    0
+  );
+  const connectedSources = financeSources.filter((source) =>
+    Number.isFinite(source.balance) && !isCardSource(source)
+  );
+  const financeGroups = (() => {
+    const groups = new Map();
+    financeSources.forEach((source) => {
+      const providerId = source.category === "bank"
+        ? source.bankId || source.name
+        : source.category === "exchange"
+          ? source.exchangeId || source.name
+          : source.category === "wallet"
+            ? source.walletId || source.name
+            : source.id;
+      const groupId = `${source.category}-${providerId}`;
+      if (!groups.has(groupId)) groups.set(groupId, {
+        id: groupId,
+        name: source.name,
+        category: source.category,
+        sources: [],
+      });
+      groups.get(groupId).sources.push(source);
+    });
+    const categoryOrder = { bank: 0, exchange: 1, wallet: 2 };
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        sources: [...group.sources].sort((a, b) => {
+          const cardDifference = Number(isCardSource(a)) - Number(isCardSource(b));
+          if (cardDifference) return cardDifference;
+          const networkDifference = (a.assetNetworkName || "").localeCompare(
+            b.assetNetworkName || "",
+            "fr",
+            { sensitivity: "base" }
+          );
+          if (networkDifference) return networkDifference;
+          return (a.accountName || "").localeCompare(
+            b.accountName || "",
+            "fr",
+            { sensitivity: "base" }
+          );
+        }),
+      }))
+      .sort((a, b) => {
+        const categoryDifference = (categoryOrder[a.category] ?? 99) - (categoryOrder[b.category] ?? 99);
+        return categoryDifference || a.name.localeCompare(b.name, "fr", { sensitivity: "base" });
+      });
+  })();
+  const formattedTotal = new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+  }).format(connectedBalance);
+
+  function openBankSetup(bank) {
+    setSelectedBank(bank);
+    setSourceModalOpen(false);
+    setAccountSetupOpen(true);
+  }
+
+  function saveBankAccount(account) {
+    if (!selectedBank) return;
+
+    setFinanceSources((sources) => [
+      ...sources,
+      {
+        id: `${selectedBank.id}-${Date.now()}`,
+        category: "bank",
+        bankId: selectedBank.id,
+        name: selectedBank.name,
+        accountName: account.accountName,
+        accountType: account.accountType,
+        lastFour: account.lastFour,
+        connectionStatus: "pending",
+      },
+    ]);
+    setAccountSetupOpen(false);
+  }
+
+  function addCoinbaseSource() {
+    setFinanceSources((sources) => {
+      if (sources.some((source) => source.exchangeId === "coinbase")) return sources;
+      return [...sources, {
+        id: `coinbase-${Date.now()}`,
+        category: "exchange",
+        exchangeId: "coinbase",
+        name: "Coinbase",
+        accountName: "Portefeuille Coinbase",
+        connectionStatus: "pending",
+      }];
+    });
+    setSourceModalOpen(false);
+  }
+
+  function openWalletSetup() {
+    setSourceModalOpen(false);
+    setWalletSetupOpen(true);
+  }
+
+  function saveEthereumWallet(address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `trust-wallet-ethereum-${Date.now()}`,
+      category: "wallet",
+      walletId: "trust-wallet",
+      networkId: "ethereum",
+      walletScannerId: "evm",
+      name: "Trust Wallet",
+      accountName: "Ethereum",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setWalletSetupOpen(false);
+  }
+
+  function saveAptosWallet(address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `trust-wallet-aptos-${Date.now()}`,
+      category: "wallet",
+      walletId: "trust-wallet",
+      networkId: "aptos",
+      walletScannerId: "aptos",
+      name: "Trust Wallet",
+      accountName: "Aptos",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setWalletSetupOpen(false);
+  }
+
+  function saveBitcoinWallet(address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `trust-wallet-bitcoin-${Date.now()}`,
+      category: "wallet",
+      walletId: "trust-wallet",
+      networkId: "bitcoin",
+      walletScannerId: "bitcoin",
+      name: "Trust Wallet",
+      accountName: "Bitcoin",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setWalletSetupOpen(false);
+  }
+
+  function saveTrustWallet(network, address) {
+    if (network === "aptos") saveAptosWallet(address);
+    else if (network === "bitcoin") saveBitcoinWallet(address);
+    else saveEthereumWallet(address);
+  }
+
+  function openPhantomSetup() {
+    setSourceModalOpen(false);
+    setPhantomSetupOpen(true);
+  }
+
+  function savePhantomWallet(network, address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `phantom-${network}-${Date.now()}`,
+      category: "wallet",
+      walletId: "phantom",
+      networkId: network === "solana" ? "solana" : "ethereum",
+      walletScannerId: network,
+      name: "Phantom",
+      accountName: network === "solana" ? "Solana" : "Réseaux EVM",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setPhantomSetupOpen(false);
+  }
+
+  function openMetamaskSetup() {
+    setSourceModalOpen(false);
+    setMetamaskSetupOpen(true);
+  }
+
+  function saveMetamaskWallet(network, address) {
+    setFinanceSources((sources) => [...sources, {
+      id: `metamask-${network}-${Date.now()}`,
+      category: "wallet",
+      walletId: "metamask",
+      networkId: network === "evm" ? "ethereum" : network,
+      walletScannerId: network,
+      name: "MetaMask",
+      accountName: network === "evm" ? "Réseaux EVM" : network === "solana" ? "Solana" : "Bitcoin",
+      walletAddress: address,
+      connectionStatus: "pending",
+    }]);
+    setMetamaskSetupOpen(false);
+  }
+
+  function removeFinanceGroup(group) {
+    const sourceIds = new Set(group.sources.map((source) => source.id));
+    setFinanceSources((sources) =>
+      sources.filter((source) => !sourceIds.has(source.id))
+    );
+  }
+
+  async function connectFinanceSource(source, { allowBankAuthorization = false } = {}) {
+    if (source.category === "exchange" && source.exchangeId === "coinbase") {
+      return syncCoinbaseSource(source);
+    }
+    if (source.category === "wallet") {
+      if (!source.walletAddress) {
+        setBankError(`${source.name} : adresse publique manquante`);
+        return;
+      }
+      const scannerId = source.walletScannerId || (
+        source.networkId === "aptos" ? "aptos" :
+        source.networkId === "bitcoin" ? "bitcoin" :
+        source.networkId === "solana" ? "solana" : "evm"
+      );
+      if (scannerId === "aptos") return syncAptosSource(source);
+      if (scannerId === "bitcoin") return syncBitcoinSource(source);
+      if (scannerId === "solana") return syncSolanaSource(source);
+      if (scannerId === "evm") return syncEthereumSource(source);
+      setBankError(`${source.name} : réseau wallet non pris en charge`);
+      return;
+    }
+    if (source.category !== "bank") {
+      setBankError("Cette source ne peut pas être synchronisée");
+      return;
+    }
+    if (!allowBankAuthorization) {
+      setBankError(`${source.name} : clique sur Reconnecter pour ouvrir l’autorisation bancaire`);
+      return;
+    }
+
+    setConnectingSourceId(source.id);
+    setBankError("");
+
+    try {
+      const response = await fetch("/api/bank/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: source.id,
+          bankId:
+            source.bankId ||
+            (source.name === "La Banque Postale"
+              ? "la-banque-postale"
+              : "boursobank"),
+        }),
+      });
+      const responseText = await response.text();
+      let data = {};
+
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          throw new Error("Le serveur bancaire a renvoyé une réponse invalide");
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            (response.status >= 500
+              ? "Le serveur bancaire local ne répond pas. Redémarre l’application avec npm run dev."
+              : "Impossible de démarrer la connexion")
+        );
+      }
+
+      if (!data.link) {
+        throw new Error("La connexion bancaire n’a pas renvoyé de lien sécurisé");
+      }
+
+      window.location.assign(data.link);
+    } catch (error) {
+      setBankError(error.message);
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncFinanceGroup(group) {
+    if (group.sources[0]?.category !== "wallet") {
+      return connectFinanceSource(group.sources[0]);
+    }
+    const sourcesByAddress = new Map();
+    group.sources.forEach((source) => {
+      const key = `${source.walletScannerId || source.networkId}-${source.walletAddress}`;
+      const current = sourcesByAddress.get(key);
+      if (!current || source.connectionStatus !== "connected") sourcesByAddress.set(key, source);
+    });
+    for (const source of sourcesByAddress.values()) {
+      await connectFinanceSource(source);
+    }
+  }
+
+  async function syncBankSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/bank/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: source.bankSessionId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation bancaire impossible");
+      if (!data.accounts?.length) throw new Error("Aucun compte bancaire n’a été trouvé");
+      setFinanceSources((sources) => replaceBankSources(sources, source, data));
+    } catch (error) {
+      setBankError(`${source.name} : ${error.message}`);
+      setFinanceSources((sources) => sources.map((item) =>
+        item.bankSessionId === source.bankSessionId
+          ? { ...item, connectionStatus: "reconnect-required" }
+          : item
+      ));
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncCoinbaseSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/coinbase/sync", { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Coinbase impossible");
+      if (!data.accounts?.length) throw new Error("Aucun actif avec un solde disponible n’a été trouvé sur Coinbase");
+
+      setFinanceSources((sources) => replaceCoinbaseSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncEthereumSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/wallet/ethereum/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: source.walletAddress }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Ethereum impossible");
+      if (!data.accounts?.length) throw new Error("Aucun actif Ethereum n’a été trouvé");
+      setFinanceSources((sources) => replaceEthereumSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncAptosSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/wallet/aptos/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: source.walletAddress }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Aptos impossible");
+      setFinanceSources((sources) => replaceAptosSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncBitcoinSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/wallet/bitcoin/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: source.walletAddress }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Bitcoin impossible");
+      setFinanceSources((sources) => replaceBitcoinSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  async function syncSolanaSource(source) {
+    setConnectingSourceId(source.id);
+    setBankError("");
+    try {
+      const response = await fetch("/api/wallet/solana/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: source.walletAddress }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Synchronisation Solana impossible");
+      if (!data.accounts?.length) throw new Error("Aucun actif Solana n’a été trouvé");
+      setFinanceSources((sources) => replaceSolanaSources(sources, source, data));
+    } catch (error) {
+      setBankError(error.message);
+    } finally {
+      setConnectingSourceId(null);
+    }
+  }
+
+  return (
+    <div className="w-full max-w-6xl mx-auto py-2">
+      <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <div className="text-sm font-semibold uppercase tracking-[0.18em] text-[#9de2ba]">
+            Patrimoine
+          </div>
+          <h1 className="text-5xl font-bold tracking-tight">Finance</h1>
+          <p className="text-gray-300 max-w-2xl">
+            Regroupe tes banques, exchanges crypto et wallets au même endroit.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setSourceModalOpen(true)}
+          className="w-fit shrink-0 rounded-2xl px-5 py-3 bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] transition font-semibold flex items-center gap-2"
+        >
+          <Plus size={19} /> Ajouter une source
+        </button>
+      </div>
+
+      {bankError && (
+        <div className="mb-6 rounded-2xl bg-[#3d252d] border border-[#d16a7f] px-5 py-4 text-[#ffb0be] flex items-start justify-between gap-4">
+          <div>
+            <div className="font-semibold">Synchronisation impossible</div>
+            <div className="text-sm mt-1">{bankError}</div>
+          </div>
+          <button type="button" onClick={() => setBankError("")} title="Fermer"><X size={18} /></button>
+        </div>
+      )}
+
+      {financeSources.length === 0 ? (
+        <section className="bg-[#161d38] border border-dashed border-[#303b6e] rounded-[32px] px-6 py-16 shadow-2xl text-center flex flex-col items-center">
+          <div className="w-16 h-16 rounded-3xl bg-[#232c52] border border-[#303b6e] flex items-center justify-center text-[#9de2ba] mb-5">
+            <WalletCards size={29} />
+          </div>
+          <h2 className="text-2xl font-bold">Aucune source financière</h2>
+          <p className="text-gray-300 max-w-md mt-2 mb-6">
+            Ajoute ta première banque ou un autre portefeuille pour commencer.
+          </p>
+          <button
+            type="button"
+            onClick={() => setSourceModalOpen(true)}
+            className="rounded-2xl px-5 py-3 bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition font-semibold flex items-center gap-2"
+          >
+            <Plus size={19} /> Ajouter ma première source
+          </button>
+        </section>
+      ) : (
+        <>
+          <section className="relative overflow-hidden bg-[#161d38] border border-[#232c52] rounded-[32px] p-7 shadow-2xl mb-6">
+            <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[#315843] opacity-30 blur-3xl" />
+            <div className="relative">
+              <div className="flex items-center gap-3 text-sm text-gray-300 mb-4">
+                <span className="w-10 h-10 rounded-2xl bg-[#232c52] border border-[#303b6e] flex items-center justify-center text-[#9de2ba]">
+                  <WalletCards size={20} />
+                </span>
+                Capital total
+              </div>
+              <div className="text-5xl sm:text-6xl font-bold tracking-tight">
+                {connectedSources.length ? formattedTotal : "Solde indisponible"}
+              </div>
+              {!connectedSources.length && (
+                <div className="text-sm text-gray-400 mt-3">
+                  Le montant apparaîtra après la connexion des comptes.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold">Mes sources</h2>
+            <p className="text-sm text-gray-300 mt-1">
+              {financeGroups.length} établissement{financeGroups.length > 1 ? "s" : ""}
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {financeGroups.map((group) => {
+              const mainSource = group.sources.find((source) => !isCardSource(source)) || group.sources[0];
+              const isExchange = mainSource.category === "exchange";
+              const isWallet = mainSource.category === "wallet";
+              const isConnected = group.sources.some((source) => source.connectionStatus === "connected");
+              const isConnecting = group.sources.some((source) => source.id === connectingSourceId);
+              const groupBalance = group.sources.reduce(
+                (total, source) => total + (Number.isFinite(source.balance) && !isCardSource(source) ? source.balance : 0),
+                0
+              );
+              const hasGroupBalance = group.sources.some(
+                (source) => Number.isFinite(source.balance) && !isCardSource(source)
+              );
+
+              return (
+              <section key={group.id} className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+                      {isExchange ? <Bitcoin size={26} /> : isWallet ? <Wallet size={26} /> : <Landmark size={26} />}
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold">{group.name}</h3>
+                      <p className="text-sm text-gray-300 mt-1">
+                        {group.sources.length} {isExchange || isWallet ? "actif" : "élément bancaire"}{group.sources.length > 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 sm:text-right">
+                    <div>
+                      <div className="text-2xl font-bold">
+                        {hasGroupBalance
+                          ? new Intl.NumberFormat("fr-FR", { style: "currency", currency: mainSource.currency || "EUR" }).format(groupBalance)
+                          : "Solde indisponible"}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-2">
+                        {isConnected ? "Source connectée en lecture seule" : "Connexion requise"}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeFinanceGroup(group)}
+                      className="w-10 h-10 shrink-0 rounded-xl bg-[#6a3140] hover:bg-[#7a394a] transition flex items-center justify-center"
+                      title="Supprimer cet établissement"
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-6 overflow-hidden rounded-2xl border border-[#232c52]">
+                  {group.sources.map((source, sourceIndex) => {
+                    const isCard = isCardSource(source);
+                    return (
+                      <div key={source.id} className={`flex flex-col gap-3 bg-[#101735] px-4 py-4 sm:flex-row sm:items-center sm:justify-between ${sourceIndex > 0 ? "border-t border-[#232c52]" : ""}`}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-9 h-9 shrink-0 rounded-xl bg-[#202948] flex items-center justify-center text-[#b7c7ff]">
+                            {isExchange ? <Bitcoin size={18} /> : isWallet ? <Wallet size={18} /> : isCard ? <WalletCards size={18} /> : <Landmark size={18} />}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-semibold truncate">{source.accountName}</div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              {isExchange || isWallet
+                                ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 8 }).format(source.assetAmount || 0)} ${source.assetCurrency || ""}`
+                                : isCard ? "Carte associée" : "Compte bancaire"}
+                              {!isExchange && source.lastFour ? ` · •••• ${source.lastFour}` : ""}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="sm:text-right">
+                          <div className="font-semibold">
+                            {Number.isFinite(source.balance)
+                              ? new Intl.NumberFormat("fr-FR", { style: "currency", currency: source.currency || "EUR" }).format(source.balance)
+                              : "Solde indisponible"}
+                          </div>
+                          {isCard && <div className="text-xs text-gray-400 mt-1">Non comptabilisée dans le capital</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-6 pt-5 border-t border-[#303b6e] flex items-center gap-2 text-sm text-gray-300">
+                  <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-[#5fa37c]" : "bg-[#ffd166]"}`} />
+                  <span className="flex-1">
+                    {isConnected ? `Synchronisé avec ${group.name}` : "Compte paramétré · Connexion bancaire requise"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isWallet) return syncFinanceGroup(group);
+                      if (mainSource.category === "bank" && mainSource.connectionStatus === "connected" && mainSource.bankSessionId) {
+                        return syncBankSource(mainSource);
+                      }
+                      return connectFinanceSource(mainSource, { allowBankAuthorization: true });
+                    }}
+                    disabled={isConnecting}
+                    className="rounded-xl px-4 py-2 bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-60 disabled:cursor-wait transition font-semibold flex items-center gap-2"
+                  >
+                    <Link2 size={16} />
+                    {isConnecting
+                      ? "Synchronisation…"
+                      : isConnected
+                        ? "Synchroniser"
+                        : mainSource.connectionStatus === "reconnect-required"
+                          ? "Reconnecter"
+                          : "Connecter"}
+                  </button>
+                </div>
+              </section>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {sourceModalOpen && (
+        <AddFinanceSourceModal
+          onSelectBank={openBankSetup}
+          onSelectCoinbase={addCoinbaseSource}
+          onSelectWallet={openWalletSetup}
+          onSelectPhantom={openPhantomSetup}
+          onSelectMetamask={openMetamaskSetup}
+          onClose={() => setSourceModalOpen(false)}
+        />
+      )}
+
+      {accountSetupOpen && (
+        <BankAccountSetupModal
+          bank={selectedBank}
+          onSave={saveBankAccount}
+          onClose={() => setAccountSetupOpen(false)}
+        />
+      )}
+
+      {walletSetupOpen && (
+        <TrustWalletSetupModal
+          onSave={saveTrustWallet}
+          onClose={() => setWalletSetupOpen(false)}
+        />
+      )}
+      {phantomSetupOpen && (
+        <PhantomWalletSetupModal
+          onSave={savePhantomWallet}
+          onClose={() => setPhantomSetupOpen(false)}
+        />
+      )}
+      {metamaskSetupOpen && (
+        <MetamaskWalletSetupModal
+          onSave={saveMetamaskWallet}
+          onClose={() => setMetamaskSetupOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddFinanceSourceModal({ onSelectBank, onSelectCoinbase, onSelectWallet, onSelectPhantom, onSelectMetamask, onClose }) {
+  const categories = [
+    { id: "bank", label: "Banque", icon: Landmark, available: true },
+    { id: "exchange", label: "Exchange crypto", icon: Bitcoin, available: true },
+    { id: "wallet", label: "Wallet", icon: Wallet, available: true },
+  ];
+  const banks = [
+    { id: "la-banque-postale", name: "La Banque Postale" },
+    { id: "boursobank", name: "BoursoBank" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="text-2xl font-bold">Ajouter une source</div>
+            <div className="text-sm text-gray-300 mt-1">Choisis le type de capital à suivre.</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-7">
+          {categories.map((category) => {
+            const Icon = category.icon;
+            return (
+              <div key={category.id} className={`rounded-2xl border p-4 ${category.available ? "bg-[#294a3b] border-[#5fa37c]" : "bg-[#101735] border-[#303b6e] opacity-60"}`}>
+                <Icon size={22} className="mb-3" />
+                <div className="font-semibold text-sm">{category.label}</div>
+                {!category.available && <div className="text-xs text-gray-400 mt-1">Bientôt</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400 mb-3">Exchanges disponibles</div>
+        <button
+          type="button"
+          onClick={onSelectCoinbase}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left mb-7"
+        >
+          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+            <Bitcoin size={23} />
+          </span>
+          <span className="flex-1">
+            <span className="block font-semibold">Coinbase</span>
+            <span className="block text-sm text-gray-300 mt-1">Synchronisation locale en lecture seule</span>
+          </span>
+          <ChevronRight size={20} />
+        </button>
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400 mb-3">Wallets disponibles</div>
+        <button
+          type="button"
+          onClick={onSelectWallet}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left mb-7"
+        >
+          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+            <Wallet size={23} />
+          </span>
+          <span className="flex-1">
+            <span className="block font-semibold">Trust Wallet</span>
+            <span className="block text-sm text-gray-300 mt-1">Ajoute une ou plusieurs adresses publiques</span>
+          </span>
+          <ChevronRight size={20} />
+        </button>
+        <button
+          type="button"
+          onClick={onSelectPhantom}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left mb-7"
+        >
+          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]"><Wallet size={23} /></span>
+          <span className="flex-1">
+            <span className="block font-semibold">Phantom</span>
+            <span className="block text-sm text-gray-300 mt-1">Solana et réseaux EVM en lecture seule</span>
+          </span>
+          <ChevronRight size={20} />
+        </button>
+        <button
+          type="button"
+          onClick={onSelectMetamask}
+          className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left mb-7"
+        >
+          <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]"><Wallet size={23} /></span>
+          <span className="flex-1">
+            <span className="block font-semibold">MetaMask</span>
+            <span className="block text-sm text-gray-300 mt-1">Ethereum, BNB Chain, Sei et autres réseaux EVM</span>
+          </span>
+          <ChevronRight size={20} />
+        </button>
+
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400 mb-3">Banques disponibles</div>
+        <div className="space-y-3">
+          {banks.map((bank) => (
+            <button
+              key={bank.id}
+              type="button"
+              onClick={() => onSelectBank(bank)}
+              className="w-full rounded-2xl bg-[#232c52] border border-[#303b6e] hover:bg-[#303b6e] transition p-4 flex items-center gap-4 text-left"
+            >
+              <span className="w-12 h-12 shrink-0 rounded-2xl bg-[#202948] border border-[#303b6e] flex items-center justify-center text-[#b7c7ff]">
+                <Landmark size={23} />
+              </span>
+              <span className="flex-1">
+                <span className="block font-semibold">{bank.name}</span>
+                <span className="block text-sm text-gray-300 mt-1">Configurer un compte</span>
+              </span>
+              <ChevronRight size={20} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrustWalletSetupModal({ onSave, onClose }) {
+  const [network, setNetwork] = useState("evm");
+  const [address, setAddress] = useState("");
+  const normalizedAddress = address.trim();
+  const isValid = network === "aptos"
+    ? /^0x[a-fA-F0-9]{1,64}$/.test(normalizedAddress)
+    : network === "bitcoin"
+      ? /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71})$/i.test(normalizedAddress)
+      : /^0x[a-fA-F0-9]{40}$/.test(normalizedAddress);
+
+  function submitWallet(event) {
+    event.preventDefault();
+    if (isValid) onSave(network, normalizedAddress);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <form onSubmit={submitWallet} className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2">
+              <Wallet size={17} /> Trust Wallet
+            </div>
+            <div className="text-2xl font-bold">Ajouter une adresse</div>
+            <div className="text-sm text-gray-300 mt-1">Tu peux revenir ici autant de fois que nécessaire pour ajouter tes différentes adresses Trust Wallet.</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          <button type="button" onClick={() => { setNetwork("evm"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "evm" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Réseaux EVM</button>
+          <button type="button" onClick={() => { setNetwork("aptos"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "aptos" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Aptos</button>
+          <button type="button" onClick={() => { setNetwork("bitcoin"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "bitcoin" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Bitcoin</button>
+        </div>
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="trust-wallet-address">Adresse publique {network === "aptos" ? "Aptos" : network === "bitcoin" ? "Bitcoin" : "EVM"}</label>
+        <input
+          id="trust-wallet-address"
+          value={address}
+          onChange={(event) => setAddress(event.target.value)}
+          className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white"
+          placeholder="0x…"
+          spellCheck="false"
+          autoComplete="off"
+        />
+        {normalizedAddress && !isValid && <div className="text-sm text-[#ffb0be] mt-2">Cette adresse {network === "aptos" ? "Aptos" : network === "bitcoin" ? "Bitcoin" : "EVM"} n’est pas valide.</div>}
+
+        <div className="mt-5 rounded-2xl bg-[#101735] border border-[#303b6e] p-4 text-sm text-gray-300 flex gap-3">
+          <Link2 size={19} className="shrink-0 text-[#9de2ba]" />
+          <p>Ne renseigne jamais ta phrase secrète ni ta clé privée. Une adresse publique permet seulement de consulter les fonds visibles sur la blockchain.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <button type="button" onClick={onClose} className="bg-[#232c52] hover:bg-[#303b6e] transition rounded-2xl py-3 font-medium">Retour</button>
+          <button type="submit" disabled={!isValid} className="bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-50 disabled:cursor-not-allowed transition rounded-2xl py-3 font-semibold">Ajouter</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PhantomWalletSetupModal({ onSave, onClose }) {
+  const [network, setNetwork] = useState("solana");
+  const [address, setAddress] = useState("");
+  const normalizedAddress = address.trim();
+  const isValid = network === "solana"
+    ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(normalizedAddress)
+    : /^0x[a-fA-F0-9]{40}$/.test(normalizedAddress);
+
+  function submitWallet(event) {
+    event.preventDefault();
+    if (isValid) onSave(network, normalizedAddress);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <form onSubmit={submitWallet} className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2"><Wallet size={17} /> Phantom</div>
+            <div className="text-2xl font-bold">Ajouter une adresse Phantom</div>
+            <div className="text-sm text-gray-300 mt-1">L’adresse Solana détecte automatiquement SOL et tes jetons SPL.</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer"><X size={18} /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          <button type="button" onClick={() => { setNetwork("solana"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "solana" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Solana</button>
+          <button type="button" onClick={() => { setNetwork("evm"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "evm" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Réseaux EVM</button>
+        </div>
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="phantom-wallet-address">Adresse publique {network === "solana" ? "Solana" : "EVM"}</label>
+        <input id="phantom-wallet-address" value={address} onChange={(event) => setAddress(event.target.value)} className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white" placeholder={network === "solana" ? "Adresse Solana…" : "0x…"} spellCheck="false" autoComplete="off" />
+        {normalizedAddress && !isValid && <div className="text-sm text-[#ffb0be] mt-2">Cette adresse {network === "solana" ? "Solana" : "EVM"} n’est pas valide.</div>}
+        <div className="mt-5 rounded-2xl bg-[#101735] border border-[#303b6e] p-4 text-sm text-gray-300 flex gap-3"><Link2 size={19} className="shrink-0 text-[#9de2ba]" /><p>Utilise uniquement ton adresse publique. Ne communique jamais ta phrase secrète ni ta clé privée.</p></div>
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <button type="button" onClick={onClose} className="bg-[#232c52] hover:bg-[#303b6e] transition rounded-2xl py-3 font-medium">Retour</button>
+          <button type="submit" disabled={!isValid} className="bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-50 disabled:cursor-not-allowed transition rounded-2xl py-3 font-semibold">Ajouter</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function MetamaskWalletSetupModal({ onSave, onClose }) {
+  const [network, setNetwork] = useState("evm");
+  const [address, setAddress] = useState("");
+  const normalizedAddress = address.trim();
+  const isValid = network === "solana"
+    ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(normalizedAddress)
+    : network === "bitcoin"
+      ? /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71})$/i.test(normalizedAddress)
+      : /^0x[a-fA-F0-9]{40}$/.test(normalizedAddress);
+
+  function submitWallet(event) {
+    event.preventDefault();
+    if (isValid) onSave(network, normalizedAddress);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <form onSubmit={submitWallet} className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2"><Wallet size={17} /> MetaMask</div>
+            <div className="text-2xl font-bold">Ajouter MetaMask</div>
+            <div className="text-sm text-gray-300 mt-1">Ajoute séparément tes adresses EVM, Solana ou Bitcoin. Elles resteront réunies dans une seule carte MetaMask.</div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer"><X size={18} /></button>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          <button type="button" onClick={() => { setNetwork("evm"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "evm" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Réseaux EVM</button>
+          <button type="button" onClick={() => { setNetwork("solana"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "solana" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Solana</button>
+          <button type="button" onClick={() => { setNetwork("bitcoin"); setAddress(""); }} className={`rounded-2xl border px-4 py-3 font-semibold transition ${network === "bitcoin" ? "bg-[#315843] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e]"}`}>Bitcoin</button>
+        </div>
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="metamask-wallet-address">Adresse publique {network === "evm" ? "EVM" : network === "solana" ? "Solana" : "Bitcoin"}</label>
+        <input id="metamask-wallet-address" value={address} onChange={(event) => setAddress(event.target.value)} className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white" placeholder={network === "evm" ? "0x…" : network === "solana" ? "Adresse Solana…" : "bc1…"} spellCheck="false" autoComplete="off" />
+        {normalizedAddress && !isValid && <div className="text-sm text-[#ffb0be] mt-2">Cette adresse {network === "evm" ? "EVM" : network === "solana" ? "Solana" : "Bitcoin"} n’est pas valide.</div>}
+        <div className="mt-5 rounded-2xl bg-[#101735] border border-[#303b6e] p-4 text-sm text-gray-300 flex gap-3"><Link2 size={19} className="shrink-0 text-[#9de2ba]" /><p>Colle uniquement ton adresse publique. Ne renseigne jamais ta phrase secrète ni ta clé privée.</p></div>
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <button type="button" onClick={onClose} className="bg-[#232c52] hover:bg-[#303b6e] transition rounded-2xl py-3 font-medium">Retour</button>
+          <button type="submit" disabled={!isValid} className="bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] disabled:opacity-50 disabled:cursor-not-allowed transition rounded-2xl py-3 font-semibold">Ajouter</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function BankAccountSetupModal({ bank, onSave, onClose }) {
+  const accountTypes = [
+    { id: "checking", label: "Compte courant" },
+    { id: "livret-a", label: "Livret A" },
+    { id: "ldds", label: "LDDS" },
+    { id: "savings", label: "Autre compte épargne" },
+  ];
+  const [accountType, setAccountType] = useState("checking");
+  const [accountName, setAccountName] = useState("Compte courant");
+  const [lastFour, setLastFour] = useState("");
+
+  function chooseAccountType(type) {
+    setAccountType(type.id);
+    setAccountName(type.label);
+  }
+
+  function submitAccount(event) {
+    event.preventDefault();
+    const trimmedName = accountName.trim();
+
+    if (!trimmedName) {
+      return;
+    }
+
+    onSave({
+      accountType,
+      accountName: trimmedName,
+      lastFour: lastFour.trim(),
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+      <form onSubmit={submitAccount} className="w-full max-w-xl bg-[#161d38] border border-[#303b6e] rounded-[32px] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#9de2ba] mb-2">
+              <Landmark size={17} /> {bank?.name || "Banque"}
+            </div>
+            <div className="text-2xl font-bold">Choisir le compte</div>
+            <div className="text-sm text-gray-300 mt-1">
+              Ces informations préparent l’affichage avant la connexion bancaire.
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="w-10 h-10 shrink-0 rounded-xl bg-[#232c52] hover:bg-[#303b6e] transition flex items-center justify-center" title="Fermer">
+            <X size={18} />
+          </button>
+        </div>
+
+        <label className="block text-sm font-semibold mb-3">Type de compte</label>
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          {accountTypes.map((type) => (
+            <button
+              key={type.id}
+              type="button"
+              onClick={() => chooseAccountType(type)}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${accountType === type.id ? "bg-[#294a3b] border-[#5fa37c]" : "bg-[#232c52] border-[#303b6e] hover:bg-[#303b6e]"}`}
+            >
+              <span className="font-semibold text-sm">{type.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="finance-account-name">Nom d’affichage</label>
+        <input
+          id="finance-account-name"
+          value={accountName}
+          onChange={(event) => setAccountName(event.target.value)}
+          className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white mb-5"
+          placeholder="Ex. Compte principal"
+        />
+
+        <label className="text-sm text-gray-300 block mb-2" htmlFor="finance-account-last-four">
+          4 derniers chiffres du compte <span className="text-gray-400">(facultatif)</span>
+        </label>
+        <input
+          id="finance-account-last-four"
+          value={lastFour}
+          onChange={(event) => setLastFour(event.target.value.replace(/\D/g, "").slice(0, 4))}
+          inputMode="numeric"
+          maxLength={4}
+          className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none text-white"
+          placeholder="1234"
+        />
+
+        <div className="mt-5 rounded-2xl bg-[#101735] border border-[#303b6e] p-4 text-sm text-gray-300 flex gap-3">
+          <Link2 size={19} className="shrink-0 text-[#9de2ba]" />
+          <p>Aucun identifiant bancaire n’est demandé ni enregistré à cette étape. La connexion sécurisée sera ajoutée ensuite.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <button type="button" onClick={onClose} className="bg-[#232c52] hover:bg-[#303b6e] transition rounded-2xl py-3 font-medium">Retour</button>
+          <button type="submit" className="bg-[#315843] border border-[#5fa37c] hover:bg-[#3d6b51] transition rounded-2xl py-3 font-semibold">Ajouter le compte</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -780,6 +2312,11 @@ function getHabitOverview(habits, habitData) {
         return;
       }
 
+      const date = getDateOnly(new Date(key.replace(`${habit.id}-`, "")));
+      if (!isHabitDayActive(habit, date)) {
+        return;
+      }
+
       if (state === "success") {
         wins++;
       }
@@ -912,6 +2449,16 @@ function DashboardView({
 }) {
   const habitOverview = getHabitOverview(habits, habitData);
   const sportOverview = getSportOverview(sportSessions);
+  const financeSources = readStoredFinanceSources();
+  const capitalTotal = financeSources.reduce((total, source) => {
+    const isCard = source.accountTypeCode === "CARD" || /^carte\b/i.test(source.accountName || "");
+    return total + (Number.isFinite(source.balance) && !isCard ? source.balance : 0);
+  }, 0);
+  const formattedCapital = new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 2,
+  }).format(capitalTotal);
 
   return (
     <div className="w-full max-w-6xl mx-auto py-2">
@@ -923,11 +2470,11 @@ function DashboardView({
           Dashboard global
         </h1>
         <p className="text-gray-300 max-w-2xl">
-          Vue rapide de tes habitudes et de ton activite sport.
+          Vue rapide de tes habitudes, de ton activite sport et de ton patrimoine.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
         <DashboardStatCard
           icon={ListChecks}
           label="Habitudes"
@@ -951,6 +2498,13 @@ function DashboardView({
           label="Seances muscu"
           value={sportOverview.sessionsCount}
           tone="blue"
+        />
+        <DashboardStatCard
+          icon={Wallet}
+          label="Capital total"
+          value={formattedCapital}
+          tone="green"
+          compact
         />
       </div>
 
@@ -1022,11 +2576,271 @@ function DashboardView({
           )}
         </section>
       </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-6 mt-6">
+        <HabitRadarChart habits={habits} habitData={habitData} />
+        <HabitWinLossProgress habits={habits} habitData={habitData} />
+      </div>
     </div>
   );
 }
 
-function DashboardStatCard({ icon: Icon, label, value, tone }) {
+function getHabitRadarAxes(habits, habitData) {
+  const axes = habits.slice(0, 8).map((habit) => {
+    const stats = getHabitOverview([habit], habitData);
+    const rate = stats.trackedDays > 0 ? (stats.wins / stats.trackedDays) * 100 : 0;
+
+    return {
+      label: habit.name,
+      value: rate,
+    };
+  });
+
+  if (axes.length === 1) {
+    const habit = habits[0];
+    const stats = getHabitOverview([habit], habitData);
+    const target = Math.max(1, habit.targetDays || 90);
+
+    axes.push(
+      { label: "Jours suivis", value: Math.min(100, (stats.trackedDays / target) * 100) },
+      { label: "Objectif wins", value: Math.min(100, (stats.wins / target) * 100) }
+    );
+  } else if (axes.length === 2) {
+    const average = (axes[0].value + axes[1].value) / 2;
+    axes.push({ label: "Moyenne", value: average });
+  }
+
+  return axes;
+}
+
+function HabitRadarChart({ habits, habitData }) {
+  const axes = getHabitRadarAxes(habits, habitData);
+  const centerX = 210;
+  const centerY = 150;
+  const radius = 104;
+  const labelRadius = 134;
+
+  const getPoint = (index, pointRadius) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / axes.length;
+    return {
+      x: centerX + Math.cos(angle) * pointRadius,
+      y: centerY + Math.sin(angle) * pointRadius,
+    };
+  };
+
+  const toPoints = (scale) =>
+    axes
+      .map((_, index) => {
+        const point = getPoint(index, radius * scale);
+        return `${point.x},${point.y}`;
+      })
+      .join(" ");
+
+  const dataPoints = axes
+    .map((axis, index) => {
+      const point = getPoint(index, radius * (axis.value / 100));
+      return `${point.x},${point.y}`;
+    })
+    .join(" ");
+
+  const getRateColor = (value) => {
+    const hue = Math.max(0, Math.min(120, value * 1.2));
+    return `hsl(${hue} 72% 48%)`;
+  };
+
+  return (
+    <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
+      <div className="mb-2">
+        <h2 className="text-2xl font-bold">Radar des habitudes</h2>
+        <p className="text-sm text-gray-300 mt-1">Taux de reussite par habitude</p>
+      </div>
+
+      {axes.length >= 3 ? (
+        <svg
+          viewBox="0 0 420 310"
+          className="w-full max-h-[340px]"
+          role="img"
+          aria-label="Graphique radar du taux de reussite des habitudes"
+        >
+          <defs>
+            <radialGradient
+              id="habit-radar-fill"
+              gradientUnits="userSpaceOnUse"
+              cx={centerX}
+              cy={centerY}
+              r={radius}
+            >
+              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.75" />
+              <stop offset="50%" stopColor="#eab308" stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#22c55e" stopOpacity="0.25" />
+            </radialGradient>
+            <radialGradient
+              id="habit-radar-stroke"
+              gradientUnits="userSpaceOnUse"
+              cx={centerX}
+              cy={centerY}
+              r={radius}
+            >
+              <stop offset="0%" stopColor="#ef4444" />
+              <stop offset="50%" stopColor="#eab308" />
+              <stop offset="100%" stopColor="#22c55e" />
+            </radialGradient>
+          </defs>
+
+          {[0.2, 0.4, 0.6, 0.8, 1].map((scale) => (
+            <polygon
+              key={scale}
+              points={toPoints(scale)}
+              fill="none"
+              stroke="var(--border-strong)"
+              strokeWidth="1"
+              opacity={scale === 1 ? 0.9 : 0.55}
+            />
+          ))}
+
+          {axes.map((axis, index) => {
+            const end = getPoint(index, radius);
+            const label = getPoint(index, labelRadius);
+            const anchor = label.x < centerX - 8 ? "end" : label.x > centerX + 8 ? "start" : "middle";
+            const shortLabel = axis.label.length > 16 ? `${axis.label.slice(0, 14)}…` : axis.label;
+
+            return (
+              <g key={`${axis.label}-${index}`}>
+                <line
+                  x1={centerX}
+                  y1={centerY}
+                  x2={end.x}
+                  y2={end.y}
+                  stroke="var(--border-strong)"
+                  strokeWidth="1"
+                  opacity="0.7"
+                />
+                <text
+                  x={label.x}
+                  y={label.y}
+                  textAnchor={anchor}
+                  dominantBaseline="middle"
+                  fill="var(--text-secondary)"
+                  fontSize="12"
+                  fontWeight="600"
+                >
+                  {shortLabel}
+                </text>
+              </g>
+            );
+          })}
+
+          <polygon
+            points={dataPoints}
+            fill="url(#habit-radar-fill)"
+            stroke="url(#habit-radar-stroke)"
+            strokeWidth="3"
+            strokeLinejoin="round"
+          />
+
+          {axes.map((axis, index) => {
+            const point = getPoint(index, radius * (axis.value / 100));
+            return (
+              <circle
+                key={`point-${axis.label}-${index}`}
+                cx={point.x}
+                cy={point.y}
+                r="4"
+                fill={getRateColor(axis.value)}
+                stroke="var(--surface)"
+                strokeWidth="2"
+              />
+            );
+          })}
+        </svg>
+      ) : (
+        <div className="h-72 flex items-center justify-center text-gray-300">
+          Ajoute une habitude pour afficher le graphique.
+        </div>
+      )}
+
+      {habits.length > 8 && (
+        <p className="text-xs text-gray-400 text-center">Les 8 premieres habitudes sont affichees.</p>
+      )}
+    </section>
+  );
+}
+
+function HabitWinLossProgress({ habits, habitData }) {
+  const trackedHabitRates = habits
+    .map((habit) => {
+      const stats = getHabitOverview([habit], habitData);
+
+      return stats.trackedDays > 0
+        ? (stats.wins / stats.trackedDays) * 100
+        : null;
+    })
+    .filter((rate) => rate !== null);
+
+  const winPercent = trackedHabitRates.length > 0
+    ? trackedHabitRates.reduce((total, rate) => total + rate, 0) / trackedHabitRates.length
+    : 0;
+  const lossPercent = trackedHabitRates.length > 0 ? 100 - winPercent : 0;
+  const formatPercent = (value) =>
+    value.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+
+  return (
+    <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl flex flex-col">
+      <div>
+        <h2 className="text-2xl font-bold">Bilan global</h2>
+        <p className="text-sm text-gray-300 mt-1">Moyenne des taux de reussite de chaque habitude</p>
+      </div>
+
+      <div className="flex-1 flex flex-col justify-center py-10">
+        <div className="flex items-end justify-between gap-4 mb-4">
+          <div>
+            <div className="text-4xl font-bold tabular-nums">{formatPercent(winPercent)}%</div>
+            <div className="text-sm text-gray-300 mt-1">de reussite moyenne</div>
+          </div>
+          <div className="text-right text-sm text-gray-300">
+            {trackedHabitRates.length} habitude{trackedHabitRates.length === 1 ? "" : "s"} prise{trackedHabitRates.length === 1 ? "" : "s"} en compte
+          </div>
+        </div>
+
+        <div
+          className="h-7 w-full overflow-hidden rounded-full bg-[#232c52] flex"
+          role="img"
+          aria-label={`${formatPercent(winPercent)} pour cent de reussite moyenne et ${formatPercent(lossPercent)} pour cent d'echec moyen`}
+        >
+          <div
+            className="h-full bg-[#5fa37c] transition-all duration-500"
+            style={{ width: `${winPercent}%` }}
+            title={`${formatPercent(winPercent)} % de reussite moyenne`}
+          />
+          <div
+            className="h-full bg-[#d16a7f] transition-all duration-500"
+            style={{ width: `${lossPercent}%` }}
+            title={`${formatPercent(lossPercent)} % d'echec moyen`}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-5">
+          <div className="bg-[#203d33] border border-[#315843] rounded-2xl p-4">
+            <div className="flex items-center gap-2 text-[#9de2ba] font-semibold">
+              <span className="w-3 h-3 rounded-full bg-[#5fa37c]" />
+              Taux de reussite
+            </div>
+            <div className="text-3xl font-bold mt-2 tabular-nums">{formatPercent(winPercent)}%</div>
+          </div>
+          <div className="bg-[#3d252d] border border-[#6a3140] rounded-2xl p-4">
+            <div className="flex items-center gap-2 text-[#ffb0be] font-semibold">
+              <span className="w-3 h-3 rounded-full bg-[#d16a7f]" />
+              Taux d'echec
+            </div>
+            <div className="text-3xl font-bold mt-2 tabular-nums">{formatPercent(lossPercent)}%</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DashboardStatCard({ icon: Icon, label, value, tone, compact = false }) {
   const toneClasses = {
     green: "text-[#9de2ba] bg-[#203d33] border-[#315843]",
     red: "text-[#ffb0be] bg-[#3d252d] border-[#6a3140]",
@@ -1038,7 +2852,7 @@ function DashboardStatCard({ icon: Icon, label, value, tone }) {
       <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center mb-5 ${toneClasses[tone]}`}>
         <Icon size={22} />
       </div>
-      <div className="text-4xl font-bold">{value}</div>
+      <div className={`${compact ? "text-3xl" : "text-4xl"} font-bold break-words`}>{value}</div>
       <div className="text-sm text-gray-300 mt-1">{label}</div>
     </div>
   );
@@ -1153,6 +2967,47 @@ function HabitsView({
                 onChange={(e) => updateTargetDays(e.target.value)}
                 className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
               />
+
+              <div className="mt-5">
+                <div className="text-sm text-gray-300 mb-2">
+                  Jours comptabilisés
+                </div>
+                <div className="grid grid-cols-7 gap-2">
+                  {WEEK_DAY_OPTIONS.map((day) => {
+                    const activeDays = getHabitActiveDays(selectedHabit);
+                    const isActive = activeDays.includes(day.value);
+
+                    return (
+                      <button
+                        key={day.value}
+                        type="button"
+                        aria-pressed={isActive}
+                        onClick={() => {
+                          if (isActive && activeDays.length === 1) {
+                            return;
+                          }
+
+                          updateSelectedHabit({
+                            activeWeekDays: isActive
+                              ? activeDays.filter((value) => value !== day.value)
+                              : [...activeDays, day.value],
+                          });
+                        }}
+                        className={`rounded-xl border px-1 py-2 text-sm font-semibold transition ${
+                          isActive
+                            ? "bg-[#315843] border-[#5fa37c] text-[#9de2ba]"
+                            : "bg-[#1a1f36] border-[#2a3154] text-[#68719b]"
+                        }`}
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-gray-400">
+                  Les autres jours seront grisés et ignorés dans les statistiques.
+                </p>
+              </div>
 
               <div className="mt-5 space-y-3">
                 <label className="flex items-center justify-between gap-4 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 cursor-pointer">
@@ -2140,7 +3995,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
       while (currentDate <= lastCompletedDay) {
         const key = getDateKey(selectedHabit.id, currentDate);
 
-        if (!updated[key]) {
+        if (isHabitDayActive(selectedHabit, currentDate) && !updated[key]) {
           updated[key] = "success";
           hasChanges = true;
         }
@@ -2154,7 +4009,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
 
       return updated;
     });
-  }, [selectedHabit.id, selectedHabit.createdAt, setHabitData]);
+  }, [selectedHabit, setHabitData]);
 
   const daysInMonth = new Date(
     currentMonth.getFullYear(),
@@ -2201,6 +4056,10 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const key = getDateKey(selectedHabit.id, getDayDate(currentMonth, day));
+      const date = getDayDate(currentMonth, day);
+      if (!isHabitDayActive(selectedHabit, date)) {
+        continue;
+      }
       const state = habitData[key];
 
       if (state === "success") {
@@ -2217,7 +4076,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
       fail,
       total: success + fail,
     };
-  }, [habitData, currentMonth, selectedHabit.id, daysInMonth]);
+  }, [habitData, currentMonth, selectedHabit, daysInMonth]);
 
   function toggleDay(day) {
     const key = getCalendarKey(day);
@@ -2279,6 +4138,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
           const isBeforeStart = date < startDate;
           const isStartDay = date.getTime() === creationDate.getTime();
           const isToday = date.getTime() === today.getTime();
+          const isInactiveDay = !isHabitDayActive(selectedHabit, date);
 
           let styles = "bg-[#2a3257] border border-[#49538a] text-[#8c96c9]";
 
@@ -2287,11 +4147,16 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
               "bg-[#1a1f36] border border-[#2a3154] text-[#4f5888] opacity-50";
           }
 
-          if (!isBeforeStart && state === "success") {
+          if (!isBeforeStart && isInactiveDay) {
+            styles =
+              "bg-[#171b2d] border border-[#252b47] text-[#555d7d] opacity-55";
+          }
+
+          if (!isBeforeStart && !isInactiveDay && state === "success") {
             styles = "bg-[#315843] border border-[#5fa37c] text-[#9de2ba]";
           }
 
-          if (!isBeforeStart && state === "fail") {
+          if (!isBeforeStart && !isInactiveDay && state === "fail") {
             styles = "bg-[#6a3140] border border-[#d16a7f] text-[#ffb0be]";
           }
 
@@ -2299,29 +4164,29 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
             <button
               key={key}
               onClick={() => {
-                if (isBeforeStart || isStartDay) {
+                if (isBeforeStart || isStartDay || isInactiveDay) {
                   return;
                 }
 
                 toggleDay(day);
               }}
               className={`relative aspect-square rounded-xl transition-all duration-200 flex items-center justify-center text-base font-medium ${styles} ${
-                isBeforeStart || isStartDay
+                isBeforeStart || isStartDay || isInactiveDay
                   ? "cursor-not-allowed"
                   : "hover:scale-105"
               } ${isToday ? "ring-2 ring-white" : ""}`}
             >
-              {!state && !isStartDay && <span>{day}</span>}
+              {(!state || isInactiveDay) && !isStartDay && <span>{day}</span>}
 
               {isStartDay && (
                 <Flag className="absolute w-4 h-4 text-[#ffd166]" />
               )}
 
-              {!isBeforeStart && state === "success" && (
+              {!isBeforeStart && !isInactiveDay && state === "success" && (
                 <Check className="absolute w-5 h-5" strokeWidth={3} />
               )}
 
-              {!isBeforeStart && state === "fail" && (
+              {!isBeforeStart && !isInactiveDay && state === "fail" && (
                 <X className="absolute w-5 h-5" strokeWidth={3} />
               )}
             </button>
@@ -2405,7 +4270,10 @@ function HabitLifetimeStats({ selectedHabit, habitData }) {
 
       const date = getDateOnly(new Date(key.replace(`${selectedHabit.id}-`, "")));
 
-      if (date.getTime() < startDateTime) {
+      if (
+        date.getTime() < startDateTime ||
+        !isHabitDayActive(selectedHabit, date)
+      ) {
         return;
       }
 
@@ -2458,7 +4326,10 @@ function HabitLifetimeStats({ selectedHabit, habitData }) {
 
       const date = getDateOnly(new Date(key.replace(`${selectedHabit.id}-`, "")));
 
-      if (date.getTime() < startDateTime) {
+      if (
+        date.getTime() < startDateTime ||
+        !isHabitDayActive(selectedHabit, date)
+      ) {
         return;
       }
 
