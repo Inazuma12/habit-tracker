@@ -2643,6 +2643,11 @@ function HabitRadarChart({ habits, habitData }) {
     })
     .join(" ");
 
+  const getRateColor = (value) => {
+    const hue = Math.max(0, Math.min(120, value * 1.2));
+    return `hsl(${hue} 72% 48%)`;
+  };
+
   return (
     <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
       <div className="mb-2">
@@ -2658,10 +2663,28 @@ function HabitRadarChart({ habits, habitData }) {
           aria-label="Graphique radar du taux de reussite des habitudes"
         >
           <defs>
-            <linearGradient id="habit-radar-fill" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#9de2ba" stopOpacity="0.75" />
-              <stop offset="100%" stopColor="#5fa37c" stopOpacity="0.25" />
-            </linearGradient>
+            <radialGradient
+              id="habit-radar-fill"
+              gradientUnits="userSpaceOnUse"
+              cx={centerX}
+              cy={centerY}
+              r={radius}
+            >
+              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.75" />
+              <stop offset="50%" stopColor="#eab308" stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#22c55e" stopOpacity="0.25" />
+            </radialGradient>
+            <radialGradient
+              id="habit-radar-stroke"
+              gradientUnits="userSpaceOnUse"
+              cx={centerX}
+              cy={centerY}
+              r={radius}
+            >
+              <stop offset="0%" stopColor="#ef4444" />
+              <stop offset="50%" stopColor="#eab308" />
+              <stop offset="100%" stopColor="#22c55e" />
+            </radialGradient>
           </defs>
 
           {[0.2, 0.4, 0.6, 0.8, 1].map((scale) => (
@@ -2710,7 +2733,7 @@ function HabitRadarChart({ habits, habitData }) {
           <polygon
             points={dataPoints}
             fill="url(#habit-radar-fill)"
-            stroke="var(--accent-border)"
+            stroke="url(#habit-radar-stroke)"
             strokeWidth="3"
             strokeLinejoin="round"
           />
@@ -2723,7 +2746,7 @@ function HabitRadarChart({ habits, habitData }) {
                 cx={point.x}
                 cy={point.y}
                 r="4"
-                fill="var(--accent-text)"
+                fill={getRateColor(axis.value)}
                 stroke="var(--surface)"
                 strokeWidth="2"
               />
