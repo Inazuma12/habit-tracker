@@ -29,6 +29,16 @@ import {
 } from "lucide-react";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const ALL_WEEK_DAYS = [1, 2, 3, 4, 5, 6, 0];
+const WEEK_DAY_OPTIONS = [
+  { value: 1, label: "Lun" },
+  { value: 2, label: "Mar" },
+  { value: 3, label: "Mer" },
+  { value: 4, label: "Jeu" },
+  { value: 5, label: "Ven" },
+  { value: 6, label: "Sam" },
+  { value: 0, label: "Dim" },
+];
 
 const MAIN_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -161,6 +171,16 @@ function getDateOnly(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+function getHabitActiveDays(habit) {
+  return Array.isArray(habit.activeWeekDays) && habit.activeWeekDays.length > 0
+    ? habit.activeWeekDays
+    : ALL_WEEK_DAYS;
+}
+
+function isHabitDayActive(habit, date) {
+  return getHabitActiveDays(habit).includes(date.getDay());
+}
+
 function getHabitBestStreak(habit, habitData, referenceDate = new Date()) {
   const today = getDateOnly(referenceDate);
   const creationDate = getDateOnly(new Date(habit.createdAt));
@@ -171,6 +191,11 @@ function getHabitBestStreak(habit, habitData, referenceDate = new Date()) {
   let bestStreak = 0;
 
   while (currentDate <= today) {
+    if (!isHabitDayActive(habit, currentDate)) {
+      currentDate.setDate(currentDate.getDate() + 1);
+      continue;
+    }
+
     const key = getDateKey(habit.id, currentDate);
 
     if (habitData[key] === "success") {
@@ -237,6 +262,7 @@ export default function HabitTrackerApp() {
         targetDays: 90,
         countdownEnabled: false,
         countdownShowSeconds: true,
+        activeWeekDays: [...ALL_WEEK_DAYS],
       },
     ];
   });
@@ -306,6 +332,7 @@ export default function HabitTrackerApp() {
       targetDays: 90,
       countdownEnabled: false,
       countdownShowSeconds: true,
+      activeWeekDays: [...ALL_WEEK_DAYS],
     };
 
     setHabits((prev) => [...prev, newHabit]);
@@ -2285,6 +2312,11 @@ function getHabitOverview(habits, habitData) {
         return;
       }
 
+      const date = getDateOnly(new Date(key.replace(`${habit.id}-`, "")));
+      if (!isHabitDayActive(habit, date)) {
+        return;
+      }
+
       if (state === "success") {
         wins++;
       }
@@ -2912,6 +2944,47 @@ function HabitsView({
                 onChange={(e) => updateTargetDays(e.target.value)}
                 className="w-full bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 outline-none"
               />
+
+              <div className="mt-5">
+                <div className="text-sm text-gray-300 mb-2">
+                  Jours comptabilisés
+                </div>
+                <div className="grid grid-cols-7 gap-2">
+                  {WEEK_DAY_OPTIONS.map((day) => {
+                    const activeDays = getHabitActiveDays(selectedHabit);
+                    const isActive = activeDays.includes(day.value);
+
+                    return (
+                      <button
+                        key={day.value}
+                        type="button"
+                        aria-pressed={isActive}
+                        onClick={() => {
+                          if (isActive && activeDays.length === 1) {
+                            return;
+                          }
+
+                          updateSelectedHabit({
+                            activeWeekDays: isActive
+                              ? activeDays.filter((value) => value !== day.value)
+                              : [...activeDays, day.value],
+                          });
+                        }}
+                        className={`rounded-xl border px-1 py-2 text-sm font-semibold transition ${
+                          isActive
+                            ? "bg-[#315843] border-[#5fa37c] text-[#9de2ba]"
+                            : "bg-[#1a1f36] border-[#2a3154] text-[#68719b]"
+                        }`}
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-gray-400">
+                  Les autres jours seront grisés et ignorés dans les statistiques.
+                </p>
+              </div>
 
               <div className="mt-5 space-y-3">
                 <label className="flex items-center justify-between gap-4 bg-[#232c52] border border-[#4d5a8f] rounded-2xl px-4 py-3 cursor-pointer">
@@ -3899,7 +3972,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
       while (currentDate <= lastCompletedDay) {
         const key = getDateKey(selectedHabit.id, currentDate);
 
-        if (!updated[key]) {
+        if (isHabitDayActive(selectedHabit, currentDate) && !updated[key]) {
           updated[key] = "success";
           hasChanges = true;
         }
@@ -3913,7 +3986,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
 
       return updated;
     });
-  }, [selectedHabit.id, selectedHabit.createdAt, setHabitData]);
+  }, [selectedHabit, setHabitData]);
 
   const daysInMonth = new Date(
     currentMonth.getFullYear(),
@@ -3960,6 +4033,10 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const key = getDateKey(selectedHabit.id, getDayDate(currentMonth, day));
+      const date = getDayDate(currentMonth, day);
+      if (!isHabitDayActive(selectedHabit, date)) {
+        continue;
+      }
       const state = habitData[key];
 
       if (state === "success") {
@@ -3976,7 +4053,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
       fail,
       total: success + fail,
     };
-  }, [habitData, currentMonth, selectedHabit.id, daysInMonth]);
+  }, [habitData, currentMonth, selectedHabit, daysInMonth]);
 
   function toggleDay(day) {
     const key = getCalendarKey(day);
@@ -4038,6 +4115,7 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
           const isBeforeStart = date < startDate;
           const isStartDay = date.getTime() === creationDate.getTime();
           const isToday = date.getTime() === today.getTime();
+          const isInactiveDay = !isHabitDayActive(selectedHabit, date);
 
           let styles = "bg-[#2a3257] border border-[#49538a] text-[#8c96c9]";
 
@@ -4046,11 +4124,16 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
               "bg-[#1a1f36] border border-[#2a3154] text-[#4f5888] opacity-50";
           }
 
-          if (!isBeforeStart && state === "success") {
+          if (!isBeforeStart && isInactiveDay) {
+            styles =
+              "bg-[#171b2d] border border-[#252b47] text-[#555d7d] opacity-55";
+          }
+
+          if (!isBeforeStart && !isInactiveDay && state === "success") {
             styles = "bg-[#315843] border border-[#5fa37c] text-[#9de2ba]";
           }
 
-          if (!isBeforeStart && state === "fail") {
+          if (!isBeforeStart && !isInactiveDay && state === "fail") {
             styles = "bg-[#6a3140] border border-[#d16a7f] text-[#ffb0be]";
           }
 
@@ -4058,29 +4141,29 @@ function HabitCalendar({ selectedHabit, habitData, setHabitData }) {
             <button
               key={key}
               onClick={() => {
-                if (isBeforeStart || isStartDay) {
+                if (isBeforeStart || isStartDay || isInactiveDay) {
                   return;
                 }
 
                 toggleDay(day);
               }}
               className={`relative aspect-square rounded-xl transition-all duration-200 flex items-center justify-center text-base font-medium ${styles} ${
-                isBeforeStart || isStartDay
+                isBeforeStart || isStartDay || isInactiveDay
                   ? "cursor-not-allowed"
                   : "hover:scale-105"
               } ${isToday ? "ring-2 ring-white" : ""}`}
             >
-              {!state && !isStartDay && <span>{day}</span>}
+              {(!state || isInactiveDay) && !isStartDay && <span>{day}</span>}
 
               {isStartDay && (
                 <Flag className="absolute w-4 h-4 text-[#ffd166]" />
               )}
 
-              {!isBeforeStart && state === "success" && (
+              {!isBeforeStart && !isInactiveDay && state === "success" && (
                 <Check className="absolute w-5 h-5" strokeWidth={3} />
               )}
 
-              {!isBeforeStart && state === "fail" && (
+              {!isBeforeStart && !isInactiveDay && state === "fail" && (
                 <X className="absolute w-5 h-5" strokeWidth={3} />
               )}
             </button>
@@ -4164,7 +4247,10 @@ function HabitLifetimeStats({ selectedHabit, habitData }) {
 
       const date = getDateOnly(new Date(key.replace(`${selectedHabit.id}-`, "")));
 
-      if (date.getTime() < startDateTime) {
+      if (
+        date.getTime() < startDateTime ||
+        !isHabitDayActive(selectedHabit, date)
+      ) {
         return;
       }
 
@@ -4217,7 +4303,10 @@ function HabitLifetimeStats({ selectedHabit, habitData }) {
 
       const date = getDateOnly(new Date(key.replace(`${selectedHabit.id}-`, "")));
 
-      if (date.getTime() < startDateTime) {
+      if (
+        date.getTime() < startDateTime ||
+        !isHabitDayActive(selectedHabit, date)
+      ) {
         return;
       }
 
