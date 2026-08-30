@@ -23,6 +23,7 @@ import {
   Palette,
   Sun,
   Trash2,
+  TrendingUp,
   Trophy,
   Wallet,
   WalletCards,
@@ -66,6 +67,7 @@ const DEFAULT_MUSCU_EXERCISES = [
   "Curl biceps haltères",
   "Curl biceps haltères incliné",
   "Curl biceps barre",
+  "Curl biceps poulie basse",
   "Curl incliné",
   "Curl marteau",
   "Développé couché",
@@ -119,6 +121,7 @@ const DEFAULT_MUSCU_EXERCISES = [
   "Renegade Row",
   "Rowing barre",
   "Rowing haltère",
+  "Rowing T-bar",
   "Russian Twist",
   "Shrugs",
   "Sit-up",
@@ -3221,6 +3224,199 @@ function sortSportSessions(sessions) {
   return [...sessions].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function getExerciseChartValue(exercise) {
+  if (exercise.type === "cardio") {
+    return Number.isFinite(exercise.distanceKm)
+      ? exercise.distanceKm
+      : exercise.durationMinutes;
+  }
+
+  return exercise.value;
+}
+
+function getSportChartBucket(dateString, period) {
+  const date = new Date(`${dateString}T12:00:00`);
+
+  if (period === "month") {
+    return {
+      key: dateString.slice(0, 7),
+      label: date.toLocaleDateString("fr-FR", {
+        month: "short",
+        year: "2-digit",
+      }),
+    };
+  }
+
+  if (period === "week") {
+    const monday = new Date(date);
+    const dayFromMonday = (date.getDay() + 6) % 7;
+    monday.setDate(date.getDate() - dayFromMonday);
+    const key = [
+      monday.getFullYear(),
+      String(monday.getMonth() + 1).padStart(2, "0"),
+      String(monday.getDate()).padStart(2, "0"),
+    ].join("-");
+
+    return {
+      key,
+      label: `Sem. ${monday.toLocaleDateString("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+      })}`,
+    };
+  }
+
+  return {
+    key: dateString,
+    label: date.toLocaleDateString("fr-FR", {
+      day: "2-digit",
+      month: "short",
+    }),
+  };
+}
+
+function getExerciseChartData(sportSessions, exerciseName, period) {
+  const bestByBucket = new Map();
+
+  sportSessions.forEach((session) => {
+    session.exercises.forEach((exercise) => {
+      if (exercise.name !== exerciseName) {
+        return;
+      }
+
+      const value = Number(getExerciseChartValue(exercise));
+
+      if (!Number.isFinite(value)) {
+        return;
+      }
+
+      const bucket = getSportChartBucket(session.date, period);
+      const current = bestByBucket.get(bucket.key);
+
+      if (!current || value > current.value) {
+        bestByBucket.set(bucket.key, {
+          ...bucket,
+          value,
+          date: session.date,
+        });
+      }
+    });
+  });
+
+  return [...bestByBucket.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function SportProgressChart({ data, exerciseName }) {
+  if (data.length === 0) {
+    return (
+      <div className="min-h-72 rounded-2xl border border-dashed border-[#3b4777] bg-[#101735] flex items-center justify-center px-6 text-center text-gray-400">
+        Ajoute une performance pour afficher son évolution.
+      </div>
+    );
+  }
+
+  const width = 900;
+  const height = 320;
+  const padding = { top: 24, right: 28, bottom: 58, left: 64 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const maxValue = Math.max(...data.map((point) => point.value));
+  const axisMax = maxValue > 0 ? maxValue * 1.12 : 1;
+  const points = data.map((point, index) => ({
+    ...point,
+    x:
+      data.length === 1
+        ? padding.left + plotWidth / 2
+        : padding.left + (index / (data.length - 1)) * plotWidth,
+    y: padding.top + plotHeight - (point.value / axisMax) * plotHeight,
+  }));
+  const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
+  const gridValues = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <div className="overflow-x-auto rounded-2xl bg-[#101735] border border-[#303b6e]">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="block min-w-[700px] w-full"
+        role="img"
+        aria-label={`Évolution de ${exerciseName}`}
+      >
+        {gridValues.map((ratio) => {
+          const y = padding.top + plotHeight - ratio * plotHeight;
+          const value = axisMax * ratio;
+
+          return (
+            <g key={ratio}>
+              <line
+                x1={padding.left}
+                x2={width - padding.right}
+                y1={y}
+                y2={y}
+                stroke="#303b6e"
+                strokeDasharray="5 7"
+              />
+              <text
+                x={padding.left - 12}
+                y={y + 4}
+                textAnchor="end"
+                fill="#9ca3af"
+                fontSize="12"
+              >
+                {formatSportValue(Number(value.toFixed(1)))}
+              </text>
+            </g>
+          );
+        })}
+
+        {points.length > 1 && (
+          <polyline
+            points={linePoints}
+            fill="none"
+            stroke="#9de2ba"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+
+        {points.map((point) => (
+          <g key={point.key}>
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r="7"
+              fill="#9de2ba"
+              stroke="#161d38"
+              strokeWidth="4"
+            >
+              <title>{`${point.label} : ${formatSportValue(point.value)}`}</title>
+            </circle>
+            <text
+              x={point.x}
+              y={Math.max(16, point.y - 14)}
+              textAnchor="middle"
+              fill="#d1fae5"
+              fontWeight="700"
+              fontSize="12"
+            >
+              {formatSportValue(point.value)}
+            </text>
+            <text
+              x={point.x}
+              y={height - 25}
+              textAnchor="middle"
+              fill="#9ca3af"
+              fontSize="12"
+            >
+              {point.label}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 function getSessionSportType(exercises) {
   const hasCardio = exercises.some((exercise) => exercise.type === "cardio");
   const hasStrength = exercises.some((exercise) => exercise.type !== "cardio");
@@ -3235,9 +3431,32 @@ function getSessionSportType(exercises) {
 function SportView({ sportSessions, setSportSessions }) {
   const overview = getSportOverview(sportSessions);
   const exerciseOptions = getSportExerciseOptions(sportSessions);
+  const trackedExerciseOptions = useMemo(
+    () =>
+      [...new Set(
+        sportSessions.flatMap((session) =>
+          session.exercises.map((exercise) => exercise.name).filter(Boolean)
+        )
+      )].sort((a, b) => a.localeCompare(b)),
+    [sportSessions]
+  );
   const [formOpen, setFormOpen] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [sportForm, setSportForm] = useState(() => createEmptySportForm());
+  const [chartExercise, setChartExercise] = useState("");
+  const [chartPeriod, setChartPeriod] = useState("day");
+  const selectedChartExercise = trackedExerciseOptions.includes(chartExercise)
+    ? chartExercise
+    : trackedExerciseOptions[0] || "";
+  const chartData = useMemo(
+    () =>
+      getExerciseChartData(
+        sportSessions,
+        selectedChartExercise,
+        chartPeriod
+      ),
+    [sportSessions, selectedChartExercise, chartPeriod]
+  );
 
   function openCreateForm() {
     setEditingSessionId(null);
@@ -3666,6 +3885,68 @@ function SportView({ sportSessions, setSportSessions }) {
           tone="green"
         />
       </div>
+
+      <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl mb-6">
+        <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-5 mb-6">
+          <div>
+            <div className="flex items-center gap-3">
+              <TrendingUp className="text-[#9de2ba]" size={24} />
+              <h2 className="text-2xl font-bold">Évolution des exercices</h2>
+            </div>
+            <p className="text-sm text-gray-300 mt-2">
+              En semaine et en mois, le graphique conserve ton meilleur score de la période.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <label className="block min-w-56">
+              <span className="sr-only">Exercice affiché</span>
+              <select
+                value={selectedChartExercise}
+                onChange={(event) => setChartExercise(event.target.value)}
+                disabled={trackedExerciseOptions.length === 0}
+                className="w-full h-12 bg-[#232c52] border border-[#4d5a8f] rounded-xl px-4 outline-none disabled:opacity-50"
+              >
+                {trackedExerciseOptions.length === 0 ? (
+                  <option value="">Aucun exercice enregistré</option>
+                ) : (
+                  trackedExerciseOptions.map((exerciseName) => (
+                    <option key={exerciseName} value={exerciseName}>
+                      {exerciseName}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+
+            <div className="grid grid-cols-3 rounded-xl bg-[#101735] border border-[#303b6e] p-1">
+              {[
+                { id: "day", label: "Jour" },
+                { id: "week", label: "Semaine" },
+                { id: "month", label: "Mois" },
+              ].map((period) => (
+                <button
+                  key={period.id}
+                  type="button"
+                  onClick={() => setChartPeriod(period.id)}
+                  className={`h-10 rounded-lg px-4 text-sm font-semibold transition ${
+                    chartPeriod === period.id
+                      ? "bg-[#315843] text-white"
+                      : "text-gray-300 hover:bg-[#232c52]"
+                  }`}
+                >
+                  {period.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <SportProgressChart
+          data={chartData}
+          exerciseName={selectedChartExercise}
+        />
+      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-[0.8fr_1.2fr] gap-6 mb-6">
         <section className="bg-[#161d38] border border-[#232c52] rounded-[32px] p-6 shadow-2xl">
